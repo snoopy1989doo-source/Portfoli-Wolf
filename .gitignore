@@ -3,3 +3,4 @@ android/
 release-output/
 capacitor.config.json
 package-lock.json
+audit/private-backups/

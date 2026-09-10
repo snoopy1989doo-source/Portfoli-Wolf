@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <title>Pixel Steward - Portfolio & Asset Tracker</title>
   
@@ -31,7 +31,8 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
   
   <!-- Main Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=3.3.1">
+  <link rel="stylesheet" href="style.css?v=4.0.0">
+  <link rel="stylesheet" href="mobile.css?v=4.0.0">
 </head>
 <body>
   <div class="app-layout">
@@ -354,16 +355,16 @@
             <small class="form-hint">รองรับทศนิยมแบบ Dime เช่น 0.0470276</small>
           </div>
           <div class="form-group flex-1">
-            <label>ต้นทุนเฉลี่ยต่อหุ้น ($ USD) <span class="req">*</span></label>
+            <label for="holding-avg-cost">ต้นทุนเฉลี่ยต่อหน่วย (สกุลเงินที่เลือก) <span class="req">*</span></label>
             <input type="number" step="any" id="holding-avg-cost" class="form-input font-mono" placeholder="199.6858" required>
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group flex-1">
-            <label>ราคาตลาดปัจจุบัน ($ USD)</label>
-            <input type="number" step="any" id="holding-current-price" class="form-input font-mono" placeholder="214.72">
-            <small class="form-hint">จะดึงอัตโนมัติหากมีราคาตลาด</small>
+            <label for="holding-current-price">ราคาปัจจุบันต่อหน่วย (สกุลเงินที่เลือก)</label>
+            <input type="number" step="any" min="0" id="holding-current-price" class="form-input font-mono" placeholder="214.72" required>
+            <small class="form-hint">กรอกราคาที่ทราบล่าสุด ระบบจะอัปเดตเพิ่มเมื่อบริการส่งราคาได้</small>
           </div>
           <div class="form-group flex-1">
             <label>% เปลี่ยนแปลง 1 วัน (1D %)</label>
@@ -965,6 +966,9 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Core JavaScript Application -->
-  <script src="app.js?v=3.3.1"></script>
+  <script src="portfolio-core.js?v=4.0.0"></script>
+  <script src="cloud-store.js?v=4.0.0"></script>
+  <script src="app.js?v=4.0.0"></script>
+  <script src="app-data.js?v=4.0.0"></script>
 </body>
 </html>

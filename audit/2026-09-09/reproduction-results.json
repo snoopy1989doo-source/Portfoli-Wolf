@@ -1,0 +1,148 @@
+{
+  "auditedCommit": "ed93106bc3023a9b67ae3246013b754b18d3f284",
+  "syntheticOnly": true,
+  "networkUsed": false,
+  "checks": [
+    {
+      "id": "R01",
+      "confirmed": true,
+      "title": "An automatic refresh with no prices can overwrite a newer edit",
+      "evidence": {
+        "corrected": 10000,
+        "afterStaleRefresh": 15000
+      }
+    },
+    {
+      "id": "R02",
+      "confirmed": true,
+      "title": "An older incoming lastUpdated is accepted",
+      "evidence": "No incoming revision/timestamp guard"
+    },
+    {
+      "id": "R03",
+      "confirmed": true,
+      "title": "Missing cloud collections retain deleted local records",
+      "evidence": {
+        "dividends": [
+          {
+            "id": "deleted"
+          }
+        ],
+        "snapshots": [
+          {
+            "id": "deleted-quarter"
+          }
+        ]
+      }
+    },
+    {
+      "id": "R04",
+      "confirmed": true,
+      "title": "An explicitly empty portfolio list is repopulated with defaults",
+      "evidence": {
+        "defaultPortfolios": 9
+      }
+    },
+    {
+      "id": "R05",
+      "confirmed": true,
+      "title": "Nonzero PEP is removed during enrichment",
+      "evidence": "PEP shares=10 disappears"
+    },
+    {
+      "id": "R06",
+      "confirmed": true,
+      "title": "Trade history is excluded from saved data",
+      "evidence": [
+        "portfolios",
+        "tradingData",
+        "quarterlySnapshots",
+        "dividends",
+        "achievements",
+        "exchangeRate",
+        "lastUpdated"
+      ]
+    },
+    {
+      "id": "R07",
+      "confirmed": true,
+      "title": "Editing a holding drops its target amount",
+      "evidence": "targetTHB=15000 -> missing"
+    },
+    {
+      "id": "R08",
+      "confirmed": true,
+      "title": "September startup backdates current values into March and June",
+      "evidence": [
+        {
+          "date": "2026-03-31",
+          "totalUSD": 10000
+        },
+        {
+          "date": "2026-06-30",
+          "totalUSD": 10000
+        }
+      ]
+    },
+    {
+      "id": "R09",
+      "confirmed": true,
+      "title": "Markdown chooses the first quarter match from the wrong year",
+      "evidence": "Quarterly Snapshots (ประวัติผลงานรายไตรมาสปี 2026)\n\n| Portfolio | Q1 Value ($) | Q2 Value ($) | Q3 Value ($) | Q4 Value ($) | Current ($) |\n| :--- | :--- | :--- | :--- | :--- | :--- |\n| **[[Synthetic portfolio]]** | $1,111.00 | - | - | - | $0.00 |\n\n---"
+    },
+    {
+      "id": "R10",
+      "confirmed": true,
+      "title": "Benchmark draws fixed index data and invented portfolio path",
+      "evidence": [
+        [
+          0,
+          5,
+          11,
+          17,
+          20
+        ],
+        [
+          0,
+          2.8,
+          5.4,
+          7.6,
+          9.8
+        ],
+        [
+          0,
+          0.8,
+          -1.2,
+          1.5,
+          3.2
+        ]
+      ]
+    },
+    {
+      "id": "R11",
+      "confirmed": true,
+      "title": "A Thai quote uses FX captured before the FX update",
+      "evidence": {
+        "actualTHB": 320,
+        "displayedTHB": 330
+      }
+    },
+    {
+      "id": "R12",
+      "confirmed": true,
+      "title": "Share renderer calls a nonexistent calculation method",
+      "evidence": "calculatePortfolioTotal is undefined"
+    },
+    {
+      "id": "R13",
+      "confirmed": true,
+      "title": "Current-value weighted daily change differs from aggregate return",
+      "evidence": {
+        "priorTotal": 200,
+        "currentTotal": 300,
+        "truePct": 50,
+        "shownPct": 66.66666666666667
+      }
+    }
+  ]
+}
