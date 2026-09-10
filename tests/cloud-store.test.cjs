@@ -17,11 +17,13 @@ test('quarter-end deadline expires before write; no backdated request is sent',a
   let count=0;const store=new Store('test',async()=>{count++;return response({revision:1});});
   await assert.rejects(store.transaction(()=>({revision:2}),null,false,Date.now()-1),/day ended/);assert.equal(count,1);
 });
-test('authenticated requests attach the current Firebase ID token',async()=>{
+test('authenticated requests send the Firebase ID token using the Realtime Database auth parameter',async()=>{
   let seen;
   const request=Store.authenticatedRequest(async()=>'id-token',async(url,options)=>{seen={url,options};return response({ok:true});});
   await request('https://test.invalid/user.json',{headers:{Accept:'application/json'}});
-  assert.equal(seen.options.headers.Authorization,'Bearer id-token');
+  assert.equal(seen.url,'https://test.invalid/user.json?auth=id-token');
   assert.equal(seen.options.headers.Accept,'application/json');
+  await request('https://test.invalid/user.json?print=silent');
+  assert.equal(seen.url,'https://test.invalid/user.json?print=silent&auth=id-token');
   await assert.rejects(Store.authenticatedRequest(async()=>null,async()=>response({}))('x'),/Authentication required/);
 });

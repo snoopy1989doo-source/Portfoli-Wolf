@@ -25,7 +25,8 @@
     return async function(url,options={}){
       const token=await getToken();
       if(!token)throw Error('Authentication required');
-      return request(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+      const separator=url.includes('?')?'&':'?';
+      return request(`${url}${separator}auth=${encodeURIComponent(token)}`,options);
     };
   };
   return OnlineCloudStore;
