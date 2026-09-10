@@ -4,6 +4,8 @@ body { font-size:16px; touch-action:auto; }
 body { background:#0b1220; }
 #online-status { width:100%; font-size:13px; color:#aabbd1; text-align:right; }
 #online-status[data-status="offline"] { color:#fda4af; }
+.auth-action { white-space:nowrap; }
+.settings-ai-vault { margin-top:24px; }
 .dime-hero-banner { background:#142235!important; border:1px solid #31445d!important; box-shadow:none!important; }
 .dime-hero-banner::after { display:none; }
 .dime-hero-label { font-size:16px!important; color:#cbd5e1!important; }
@@ -52,7 +54,7 @@ body.privacy-mode #app-view-container,body.privacy-mode #spec-gauges-track,body.
   .header-right button { min-width:44px; min-height:44px!important; }
   .currency-toggle-wrapper { margin-right:auto; }
   .main-content { padding-bottom:160px!important; }
-  .mobile-nav { display:grid!important; grid-template-columns:repeat(5,minmax(0,1fr)); width:100%!important; overflow:visible!important; gap:2px; height:auto!important; padding:6px 4px calc(6px + env(safe-area-inset-bottom))!important; z-index:900!important; }
+  .mobile-nav { display:grid!important; grid-template-columns:repeat(4,minmax(0,1fr)); width:100%!important; overflow:visible!important; gap:2px; height:auto!important; padding:6px 4px calc(6px + env(safe-area-inset-bottom))!important; z-index:900!important; }
   .mobile-nav-item { min-width:0!important; width:auto!important; padding:7px 2px!important; min-height:48px; font-size:12px!important; }
   .mobile-nav-item span { font-size:12px!important; }
   .mobile-nav-item span:first-child { font-size:17px!important; }

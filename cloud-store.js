@@ -21,5 +21,12 @@
       }finally{clearTimeout(timer);}
     }
   }
+  OnlineCloudStore.authenticatedRequest=function(getToken,request=fetch){
+    return async function(url,options={}){
+      const token=await getToken();
+      if(!token)throw Error('Authentication required');
+      return request(url,{...options,headers:{...(options.headers||{}),Authorization:`Bearer ${token}`}});
+    };
+  };
   return OnlineCloudStore;
 });

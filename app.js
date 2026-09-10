@@ -503,8 +503,8 @@ class PixelStewardApp {
     const totalPLPct = holdingsCostUSD > 0 ? ((holdingsTotalUSD - holdingsCostUSD) / holdingsCostUSD) * 100 : 0;
     const previousTotalUSD = previousHoldingsUSD + cashBufferUSD;
     const avg1dChangePct = previousTotalUSD > 0 ? (totalValueUSD / previousTotalUSD - 1) * 100 : 0;
-    const goalUSD = parseFloat(port.goalUSD) || 1;
-    const goalProgressPct = Math.min(100, Math.max(0, (totalValueUSD / goalUSD) * 100));
+    const goalUSD = Math.max(0, this.getPortfolioGoalUSD ? this.getPortfolioGoalUSD(port) : parseFloat(port.goalUSD) || 0);
+    const goalProgressPct = goalUSD > 0 ? Math.min(100, Math.max(0, (totalValueUSD / goalUSD) * 100)) : 0;
 
     return {
       holdingsTotalUSD,
@@ -2372,7 +2372,7 @@ class PixelStewardApp {
             </div>
             <h2 style="font-size: 26px; font-weight: 800; color: #fff; margin-top: 2px;">${port.emoji || ''} ${this.escapeHtml(port.name)}</h2>
             <div class="subport-target-goal-text font-mono">
-              🎯 เป้าหมายพอร์ต: <strong class="text-white">${this.formatTHB(port.goalTHB || this.usdToThb(stats.goalUSD))}</strong> (${this.formatUSD(stats.goalUSD)}) • ความคืบหน้า <strong>${stats.goalProgressPct.toFixed(1)}%</strong>
+              🎯 เป้าหมายพอร์ต: <strong class="text-white">${this.formatTHB(port.goalCurrency === 'THB' && Number.isFinite(Number(port.goalTHB)) ? Number(port.goalTHB) : this.usdToThb(stats.goalUSD))}</strong> (${this.formatUSD(stats.goalUSD)}) • ความคืบหน้า <strong>${stats.goalProgressPct.toFixed(1)}%</strong>
             </div>
             <div class="progress-bar-bg" style="width: 280px; margin-top: 8px;">
               <div class="progress-bar-fill" style="width: ${stats.goalProgressPct}%; background: ${port.color || '#10b981'};"></div>
@@ -3890,8 +3890,7 @@ class PixelStewardApp {
       { id: 'dividends', icon: '💰', title: 'บันทึกเงินปันผล', sub: 'ประวัติรับปันผลและ Passive Income' },
       { id: 'simulator', icon: '🔮', title: 'จำลองเงินล้าน (Simulator)', sub: 'พลังดอกเบี้ยทบต้นและเป้าหมายสู่อิสรภาพ' },
       { id: 'quarterly', icon: '📈', title: 'เปรียบเทียบผลงานรายไตรมาส', sub: 'Snapshot Q1/Q2/Q3/Q4 และการเติบโต' },
-      { id: 'obsidian', icon: '🤖', title: 'Obsidian & AI Second Brain', sub: 'ส่งออกรายงาน Markdown สำหรับ AI' },
-      { id: 'settings', icon: '⚙️', title: 'ตั้งค่า & ฐานข้อมูล', sub: 'จัดการ Firebase และอัตราแลกเปลี่ยน' }
+      { id: 'settings', icon: '⚙️', title: 'ตั้งค่า, AI Vault & ฐานข้อมูล', sub: 'จัดการบัญชี Firebase อัตราแลกเปลี่ยน และส่งออก Markdown' }
     ].filter(item => !q || item.title.toLowerCase().includes(q) || item.sub.toLowerCase().includes(q));
 
     // 4. Quick Actions
@@ -4213,7 +4212,7 @@ class PixelStewardApp {
     const select = document.getElementById('rebalance-port-select');
     if (select) {
       select.innerHTML = this.portfolios.map(p => `
-        <option value="${p.id}" ${p.id === this.selectedPortfolioId ? 'selected' : ''}>${p.emoji || '📁'} ${this.escapeHtml(p.name)} (Goal: $${(p.goalUSD || 0).toLocaleString()})</option>
+        <option value="${p.id}" ${p.id === this.selectedPortfolioId ? 'selected' : ''}>${p.emoji || '📁'} ${this.escapeHtml(p.name)} (Goal: $${(this.getPortfolioGoalUSD ? this.getPortfolioGoalUSD(p) : p.goalUSD || 0).toLocaleString()})</option>
       `).join('');
     }
     this.updateRebalanceDepositHint();
@@ -4247,7 +4246,8 @@ class PixelStewardApp {
     // Smart Allocation Algorithm
     const holdingItems = port.holdings.map(h => {
       const stats = this.calculateHoldingStats(h);
-      const targetUSD = h.targetTHB > 0 ? this.thbToUsd(h.targetTHB) : (port.goalUSD / port.holdings.length);
+      const portGoalUSD = this.getPortfolioGoalUSD ? this.getPortfolioGoalUSD(port) : (port.goalUSD || 0);
+      const targetUSD = h.targetTHB > 0 ? this.thbToUsd(h.targetTHB) : (portGoalUSD / port.holdings.length);
       const gapUSD = Math.max(0, targetUSD - stats.marketValueUSD);
       return {
         holding: h,
@@ -4345,18 +4345,25 @@ class PixelStewardApp {
 
       <div class="analytics-charts-grid">
         <div class="chart-card">
+          <div class="chart-title">🔐 บัญชี Google สำหรับข้อมูลส่วนตัว</div>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+            ${this.authUser ? `เข้าสู่ระบบแล้ว: <strong>${this.escapeHtml(this.authUser.email || 'บัญชี Google')}</strong>` : 'ต้องเข้าสู่ระบบก่อนอ่านหรือบันทึกข้อมูลบน Cloud'}
+          </p>
+          <button class="btn ${this.authUser ? 'btn-secondary' : 'btn-primary'}" id="btn-auth-settings">${this.authUser ? 'ออกจากระบบ' : 'เข้าสู่ระบบด้วย Google'}</button>
+        </div>
+        <div class="chart-card">
           <div class="chart-title">ราคาตลาด (Finnhub API Key — ไม่จำเป็นต้องใส่)</div>
           <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
-            ดึงราคาตามสิทธิ์และโควตาของ Finnhub; ความสดขึ้นกับผู้ให้บริการ อาจไม่มีข้อมูลนอกเวลาตลาด
+            ไม่ใส่ก็ใช้งานได้ ระบบจะใช้ Yahoo และแหล่งสำรอง การใส่ Finnhub ช่วยเพิ่มแหล่งราคาหุ้น US และบันทึกไว้เฉพาะเบราว์เซอร์เครื่องนี้ หากเคยใส่ใน Firefox เครื่องเดิมไม่ต้องใส่ซ้ำ
           </p>
           <div class="form-group" style="margin-bottom: 8px;">
             <label style="font-size: 12px; color: var(--text-secondary);">Finnhub API Key (ฟรี):</label>
             <div style="display: flex; gap: 8px; margin-top: 4px;">
-              <input type="text" id="input-finnhub-key" class="form-input font-mono" placeholder="ใส่ API Key เช่น c..." value="${this.finnhubApiKey || ''}" style="flex: 1;">
+              <input type="text" id="input-finnhub-key" class="form-input font-mono" placeholder="ใส่ API Key เช่น c..." value="${this.escapeHtml(this.finnhubApiKey || '')}" style="flex: 1;">
               <button class="btn btn-primary" id="btn-save-finnhub-key">💾 บันทึก Key</button>
             </div>
             <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-              👉 รับ API Key ฟรีได้ที่ <a href="https://finnhub.io/register" target="_blank" style="color: var(--color-emerald); text-decoration: underline;">finnhub.io/register</a> (สมัครฟรี 10 วินาที ใช้งานได้ทันที)
+              สมัครเพิ่มได้ที่ <a href="https://finnhub.io/register" target="_blank" rel="noopener" style="color: var(--color-emerald); text-decoration: underline;">finnhub.io/register</a>
             </div>
           </div>
         </div>
@@ -4390,6 +4397,12 @@ class PixelStewardApp {
     `;
 
     container.innerHTML = html;
+    const vault = document.createElement('section');
+    vault.className = 'settings-ai-vault';
+    this.renderObsidianExportView(vault);
+    container.appendChild(vault);
+
+    document.getElementById('btn-auth-settings')?.addEventListener('click', () => this.authUser ? this.signOutGoogle() : this.signInWithGoogle());
 
     // Finnhub Key Save Event
     document.getElementById('btn-save-finnhub-key')?.addEventListener('click', () => {
@@ -4900,7 +4913,13 @@ class PixelStewardApp {
 
     document.getElementById('edit-port-goal-usd')?.addEventListener('input', (e) => {
       const usd = parseFloat(e.target.value) || 0;
-      document.getElementById('edit-port-goal-thb').value = this.formatTHB(this.usdToThb(usd));
+      this.goalInputCurrency = 'USD';
+      document.getElementById('edit-port-goal-thb').value = (this.usdToThb(usd)).toFixed(2);
+    });
+    document.getElementById('edit-port-goal-thb')?.addEventListener('input', (e) => {
+      const thb = parseFloat(e.target.value) || 0;
+      this.goalInputCurrency = 'THB';
+      document.getElementById('edit-port-goal-usd').value = (this.thbToUsd(thb)).toFixed(2);
     });
 
     // Trading Port Edit Form Submit
@@ -5404,8 +5423,11 @@ class PixelStewardApp {
       document.getElementById('edit-port-tier').value = port.tier || 'Tier 1';
       document.getElementById('edit-port-horizon').value = port.timeHorizon || '';
       document.getElementById('edit-port-color').value = port.color || '#10b981';
-      document.getElementById('edit-port-goal-usd').value = port.goalUSD || 0;
-      document.getElementById('edit-port-goal-thb').value = this.formatTHB(this.usdToThb(port.goalUSD || 0));
+      const goalUSD = this.getPortfolioGoalUSD ? this.getPortfolioGoalUSD(port) : (port.goalUSD || 0);
+      const goalTHB = port.goalCurrency === 'THB' && Number.isFinite(Number(port.goalTHB)) ? Number(port.goalTHB) : this.usdToThb(goalUSD);
+      this.goalInputCurrency = port.goalCurrency || 'USD';
+      document.getElementById('edit-port-goal-usd').value = goalUSD.toFixed(2);
+      document.getElementById('edit-port-goal-thb').value = goalTHB.toFixed(2);
       document.getElementById('edit-port-notes').value = port.notes || '';
 
       if (deletePortBtn) {
@@ -5436,7 +5458,9 @@ class PixelStewardApp {
       document.getElementById('edit-port-emoji').value = '📁';
       document.getElementById('edit-port-horizon').value = '';
       document.getElementById('edit-port-color').value = '#10b981';
-      document.getElementById('edit-port-goal-thb').value = '฿0.00';
+      this.goalInputCurrency = 'THB';
+      document.getElementById('edit-port-goal-usd').value = '0.00';
+      document.getElementById('edit-port-goal-thb').value = '0.00';
       if (deletePortBtn) deletePortBtn.classList.add('hidden');
     }
 
@@ -5451,7 +5475,11 @@ class PixelStewardApp {
     const tier = document.getElementById('edit-port-tier').value;
     const timeHorizon = document.getElementById('edit-port-horizon')?.value.trim() || '';
     const color = document.getElementById('edit-port-color').value;
-    const goalUSD = parseFloat(document.getElementById('edit-port-goal-usd').value) || 0;
+    const inputUSD = Math.max(0, parseFloat(document.getElementById('edit-port-goal-usd').value) || 0);
+    const inputTHB = Math.max(0, parseFloat(document.getElementById('edit-port-goal-thb').value) || 0);
+    const goalCurrency = this.goalInputCurrency === 'THB' ? 'THB' : 'USD';
+    const goalUSD = goalCurrency === 'THB' ? this.thbToUsd(inputTHB) : inputUSD;
+    const goalTHB = goalCurrency === 'THB' ? inputTHB : this.usdToThb(inputUSD);
     const notes = document.getElementById('edit-port-notes').value.trim();
 
     if (portId) {
@@ -5463,6 +5491,8 @@ class PixelStewardApp {
         port.timeHorizon = timeHorizon;
         port.color = color;
         port.goalUSD = goalUSD;
+        port.goalTHB = goalTHB;
+        port.goalCurrency = goalCurrency;
         port.notes = notes;
         delete port.logo; // Remove legacy image logo if any
       }
@@ -5476,6 +5506,8 @@ class PixelStewardApp {
         timeHorizon,
         color,
         goalUSD,
+        goalTHB,
+        goalCurrency,
         cashBufferUSD: 0.00,
         notes,
         holdings: []

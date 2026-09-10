@@ -146,3 +146,11 @@ test('quarter snapshot includes trading portfolios and immutable holding details
   const {app}=runtime();app.portfolios=[p(100)];app.tradingData={a:{name:'Trading',monthlyBalances:[{year:2026,month:2,balanceUSD:50},{year:2026,month:1,balanceUSD:999}]}};
   const s=app.createCurrentPortfolioSnapshot(2026,'Q1','2026-03-31');assert.equal(s.totalUSD,150);assert.equal(s.portValuesUSD['trading:a'],50);app.portfolios[0].cashBufferUSD=0;assert.equal(s.holdings[0].cashBufferUSD,100);
 });
+test('THB portfolio goals remain fixed in baht and convert to USD for calculations',()=>{
+  const {app}=runtime();app.exchangeRate=32;
+  const port={...p(),goalCurrency:'THB',goalTHB:3200,goalUSD:999};
+  assert.equal(app.getPortfolioGoalUSD(port),100);
+  assert.equal(app.calculatePortfolioStats(port).goalUSD,100);
+  app.exchangeRate=40;
+  assert.equal(app.getPortfolioGoalUSD(port),80);
+});

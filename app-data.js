@@ -28,16 +28,47 @@ Object.assign(PixelStewardApp.prototype, {
     return PortfolioCore.normalize({portfolios:ports}).portfolios;
   },
   initFirebase() {
-    if (typeof firebase === 'undefined') { this.setCloudStatus('offline', 'เชื่อมต่อ Firebase ไม่ได้'); return; }
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    this.db = firebase.database();
-    // A separate version prevents already-open legacy clients from overwriting the new data.
-    this.dbRef = this.db.ref('pixel_steward_v4');
-    this.cloudStore = new OnlineCloudStore(firebaseConfig.databaseURL+'/pixel_steward_v4.json');
-    this.db.ref('.info/connected').on('value', snap => {
-      this.isFirebaseOnline = snap.val() === true;
-      this.setCloudStatus(this.isFirebaseOnline ? 'online' : 'offline', this.isFirebaseOnline ? 'เชื่อมต่อแล้ว' : 'ไม่มีการเชื่อมต่อ — ยังบันทึกไม่ได้');
-      if(this.isFirebaseOnline && this.cloudReady) this.syncLiveMarketPrices();
+    if (typeof firebase === 'undefined' || typeof firebase.auth !== 'function') { this.setCloudStatus('offline', 'โหลด Firebase Authentication ไม่สำเร็จ'); return; }
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      this.auth=firebase.auth();
+      this.db=firebase.database();
+      this.auth.useDeviceLanguage();
+      this.auth.onAuthStateChanged(user=>this.connectAuthenticatedCloud(user));
+      this.auth.getRedirectResult().catch(error=>this.handleAuthError(error));
+    } catch(error) { this.handleAuthError(error); }
+  },
+  disconnectCloud() {
+    this.connectionRef?.off();
+    this.dbRef?.off();
+    this.connectionRef=null;this.dbRef=null;this.cloudStore=null;
+    this.cloudReady=false;this.isFirebaseOnline=false;
+  },
+  connectAuthenticatedCloud(user) {
+    const previousUid=this.authUser?.uid||null;
+    this.disconnectCloud();
+    this.authUser=user||null;
+    if(!user || (previousUid && previousUid!==user.uid)){
+      Object.assign(this,PortfolioCore.empty());
+      this.cloudBaseline=null;this.revision=0;this.generation=null;
+      this.formRevision=null;this.viewDirty=false;
+      this.updateSidebarFxRate();
+    }
+    this.updateAuthUI();
+    if(!user){
+      this.setCloudStatus('offline','กรุณาเข้าสู่ระบบ Google ก่อนบันทึก');
+      this.renderActiveTab();
+      return;
+    }
+    const path=`users/${user.uid}/pixel_steward_v4`;
+    this.dbRef=this.db.ref(path);
+    const authenticatedRequest=OnlineCloudStore.authenticatedRequest(()=>this.auth.currentUser?.getIdToken());
+    this.cloudStore=new OnlineCloudStore(`${firebaseConfig.databaseURL}/${path}.json`,authenticatedRequest);
+    this.connectionRef=this.db.ref('.info/connected');
+    this.connectionRef.on('value',snap=>{
+      this.isFirebaseOnline=snap.val()===true && !!this.auth.currentUser;
+      this.setCloudStatus(this.isFirebaseOnline?'online':'offline',this.isFirebaseOnline?`เชื่อมต่อแล้ว • ${user.email||'บัญชี Google'}`:'ไม่มีการเชื่อมต่อ — ยังบันทึกไม่ได้');
+      if(this.isFirebaseOnline&&this.cloudReady)this.syncLiveMarketPrices();
     });
     this.dbRef.on('value', snap => {
       const value = snap.val();
@@ -54,7 +85,27 @@ Object.assign(PixelStewardApp.prototype, {
       const first = !this.cloudReady;
       this.acceptCloud(value);
       if (first) this.syncLiveMarketPrices();
-    }, () => { this.cloudReady=false; this.setCloudStatus('offline','ไม่มีสิทธิ์อ่านฐานข้อมูล'); });
+    }, error => { this.cloudReady=false; this.setCloudStatus('offline',error?.code==='PERMISSION_DENIED'?'Rules ยังไม่อนุญาตบัญชีนี้':'ไม่มีสิทธิ์อ่านฐานข้อมูล'); });
+  },
+  async signInWithGoogle() {
+    if(!this.auth)return;
+    this.setCloudStatus('syncing','กำลังเปิด Google Sign-In');
+    try { await this.auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+    catch(error){
+      if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(error.code))return this.auth.signInWithRedirect(new firebase.auth.GoogleAuthProvider());
+      this.handleAuthError(error);
+    }
+  },
+  async signOutGoogle() { await this.auth?.signOut(); },
+  handleAuthError(error) {
+    const unauthorized=error?.code==='auth/unauthorized-domain';
+    this.setCloudStatus('offline',unauthorized?'เพิ่มโดเมน GitHub Pages ใน Firebase Authorized domains':'Google Sign-In ไม่สำเร็จ');
+    this.showToast?.({title:'เข้าสู่ระบบไม่สำเร็จ',message:unauthorized?'เพิ่ม snoopy1989doo-source.github.io ใน Authentication > Settings > Authorized domains':(error?.message||'ลองใหม่อีกครั้ง'),type:'error'});
+  },
+  updateAuthUI() {
+    const button=document.getElementById('btn-auth-action');
+    if(button){button.hidden=!!this.authUser;button.style.display=this.authUser?'none':'';button.textContent='เข้าสู่ระบบ Google';}
+    if(this.currentTab==='settings'&&document.getElementById('app-view-container'))this.renderSettingsView(document.getElementById('app-view-container'));
   },
   acceptCloud(value) {
     Object.assign(this, PortfolioCore.normalize(value.data));
@@ -72,7 +123,7 @@ Object.assign(PixelStewardApp.prototype, {
   async saveData(options={}) {
     if (!this.cloudReady || !this.isFirebaseOnline || this.saving || !this.dbRef) {
       if (this.cloudBaseline) Object.assign(this,PortfolioCore.normalize(this.cloudBaseline.data));
-      this.showToast({title:'ยังบันทึกไม่ได้',message:'เชื่อมต่ออินเทอร์เน็ตและรอข้อมูลล่าสุดก่อนบันทึก',type:'error'});
+      this.showSaveGate(this.saving?'กำลังบันทึกรายการก่อนหน้า':(this.authUser?'รอข้อมูลล่าสุดจาก Cloud ก่อนบันทึก':'เข้าสู่ระบบ Google ก่อนบันทึก'));
       return false;
     }
     const next=this.dataPayload();
@@ -80,11 +131,11 @@ Object.assign(PixelStewardApp.prototype, {
     // An edit form must not silently apply calculations based on a stale balance.
     const expected=this.formRevision ?? this.revision;
     const generation=this.generation;
-    this.saving=true;
+    this.saving=true;this.setSavingUI(true);
     this.setCloudStatus('syncing','กำลังบันทึก');
     try {
       const result=await (this.cloudStore||this.dbRef).transaction(current=>PortfolioCore.commit(current,expected,next,generation),undefined,false,options.deadline);
-      this.saving=false;
+      this.saving=false;this.setSavingUI(false);
       this.formRevision=null;
       this.viewDirty=false;
       const committedValue=result.snapshot.val();
@@ -99,7 +150,7 @@ Object.assign(PixelStewardApp.prototype, {
       if(!options.snapshot) setTimeout(()=>this.recordQuarterAfterRefresh(PortfolioCore.bangkokDate()),0);
       return true;
     } catch (error) {
-      this.saving=false;
+      this.saving=false;this.setSavingUI(false);
       this.formRevision=null;
       if (this.cloudBaseline) Object.assign(this,PortfolioCore.normalize(this.cloudBaseline.data));
       this.cloudReady=false;
@@ -135,8 +186,12 @@ Object.assign(PixelStewardApp.prototype, {
   setCloudStatus(status,text) {
     for(const id of ['cloud-status-text','online-status']){const el=document.getElementById(id);if(el){el.textContent=text;el.dataset.status=status;}}
   },
+  setSavingUI(active){document.querySelectorAll('.modal-backdrop.open button[type="submit"]').forEach(button=>{button.disabled=active;button.dataset.originalText||=button.textContent;if(active)button.textContent='กำลังบันทึก…';else button.textContent=button.dataset.originalText;});},
+  showSaveGate(message){const now=Date.now();if(now-(this.lastSaveGateAt||0)<1800)return;this.lastSaveGateAt=now;this.showToast({title:message,type:'error'});},
+  getPortfolioGoalUSD(port){return port?.goalCurrency==='THB'&&Number(port.goalTHB)>=0?Number(port.goalTHB)/(this.exchangeRate||1):Math.max(0,Number(port?.goalUSD)||0);},
   setupOnlineUI() {
-    const status=document.createElement('div');status.id='online-status';status.setAttribute('role','status');status.textContent='กำลังโหลดข้อมูลจาก Cloud';document.querySelector('.header-right')?.append(status);
+    const authButton=document.createElement('button');authButton.id='btn-auth-action';authButton.className='btn btn-primary auth-action';authButton.textContent='เข้าสู่ระบบ Google';authButton.addEventListener('click',()=>this.signInWithGoogle());
+    const status=document.createElement('div');status.id='online-status';status.setAttribute('role','status');status.textContent='กำลังตรวจบัญชี Google';document.querySelector('.header-right')?.append(status,authButton);
     document.querySelectorAll('.modal-backdrop').forEach(modal=>{modal.inert=true; modal.setAttribute('aria-hidden','true');});
     document.addEventListener('input',event=>{
       if (event.target.closest('#app-view-container') && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName)) {
@@ -147,7 +202,7 @@ Object.assign(PixelStewardApp.prototype, {
     document.addEventListener('submit',event=>{
       if (!this.cloudReady || !this.isFirebaseOnline || this.saving) {
         event.preventDefault(); event.stopImmediatePropagation();
-        this.showToast({title:'รอการเชื่อมต่อและข้อมูลล่าสุดก่อนบันทึก',type:'error'});
+        this.showSaveGate(this.saving?'กำลังบันทึกรายการก่อนหน้า':'เข้าสู่ระบบและรอข้อมูลล่าสุดก่อนบันทึก');
       }
     },true);
     document.addEventListener('click',event=>{
@@ -173,9 +228,7 @@ Object.assign(PixelStewardApp.prototype, {
     const cashForm=document.getElementById('form-cash-buffer');
     cashForm?.insertAdjacentHTML('afterbegin','<label for="cash-flow-fx">อัตรา THB/USD ของรายการ (แก้ตามอัตราที่ใช้จริง)</label><input id="cash-flow-fx" type="number" min="0.000001" step="any" class="form-input" required>');
     cashForm?.addEventListener('input',e=>{const rate=Number(document.getElementById('cash-flow-fx').value);if(!(rate>0))return;const usd=document.getElementById('cash-amount-usd'),thb=document.getElementById('cash-amount-thb');if(e.target===thb)usd.value=thb.value===''?'':String(Number(thb.value)/rate);else if(e.target===usd||e.target.id==='cash-flow-fx')thb.value=usd.value===''?'':String(Number(usd.value)*rate);});
-    // User-selected allocation view is a first-class mobile destination.
-    const nav=document.querySelector('.mobile-bottom-nav') || document.querySelector('.mobile-nav');
-    if(nav){const button=document.createElement('button');button.className='mobile-nav-item';button.textContent='Heatmap';button.addEventListener('click',()=>{this.allocationViewMode='heatmap';this.switchTab('dashboard');document.getElementById('dashboard-heatmap-container')?.scrollIntoView();});nav.insertBefore(button,nav.children[1]);}
+    // Heatmap stays inside Overview; AI export lives inside Settings to keep mobile navigation compact.
     document.querySelectorAll('[data-tab="quarterly"]').forEach(button=>{const span=button.querySelector('span:last-child');if(span)span.textContent='การเติบโต';});
     const form=document.getElementById('form-holding');
     if(form){const group=document.createElement('div');group.innerHTML='<label for="holding-currency">สกุลเงินต้นทุนและราคาที่กรอก</label><select id="holding-currency" class="form-select"><option value="USD">USD — ดอลลาร์</option><option value="THB">THB — บาท</option></select><p>เงินฝาก: กรอกจำนวน 1 และใส่ยอดเงินในช่องราคา • หุ้นไทยใช้สัญลักษณ์ลงท้าย .BK</p>';form.prepend(group);}

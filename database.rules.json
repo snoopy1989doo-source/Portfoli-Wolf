@@ -1,0 +1,15 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "pixel_steward_v4": {
+          ".validate": "newData.hasChildren(['schemaVersion', 'revision', 'generation', 'data']) && newData.child('schemaVersion').val() === 4 && newData.child('revision').isNumber() && newData.child('generation').isString() && newData.child('data/exchangeRate').isNumber()"
+        }
+      }
+    }
+  }
+}
