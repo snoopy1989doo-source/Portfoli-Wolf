@@ -1,7 +1,7 @@
 {
-  "name": "Pixel Steward - Portfolio Tracker",
-  "short_name": "PixelSteward",
-  "description": "Realtime Goal-Based Investment Portfolio & Asset Tracker (USD/THB)",
+  "name": "Portfoli Wolf - Wealth Tracker",
+  "short_name": "Portfoli Wolf",
+  "description": "Private wealth, investment performance and net-worth tracker (USD/THB)",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0c0e14",

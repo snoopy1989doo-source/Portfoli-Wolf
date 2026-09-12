@@ -122,10 +122,10 @@ test('cash form keeps transaction FX, rejects overdraft and records its date',as
 test('trade has both asset and cash legs, saves realized profit and never changes quote',async()=>{
   const {app,fields,sandbox}=runtime();app.portfolios=[{...p(100),holdings:[{id:'h',ticker:'MSFT',shares:2,avgCostUSD:20,currentPriceUSD:25}]}];let action='BUY';
   sandbox.document.querySelector=()=>({value:action});app.closeModal=()=>{};app.saveData=async()=>true;
-  for(const [id,value]of Object.entries({'trade-stock-select':'p:::h','trade-shares':'1','trade-price':'30','trade-selected-tag':'test','trade-custom-note':''}))fields[id]={value};
-  fields['trade-use-cash-buffer']={checked:true};await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,70);assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,25);
-  action='SELL';await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,100);assert.ok(Math.abs(app.tradingHistory[0].realizedPLUSD-20/3)<1e-10);
-  action='BUY';fields['trade-use-cash-buffer'].checked=false;await app.executeTrade();assert.equal(app.cashFlows[0].type,'DEPOSIT');assert.equal(app.cashFlows[0].amountUSD,30);
+  for(const [id,value]of Object.entries({'trade-stock-select':'p:::h','trade-shares':'1','trade-price':'30','trade-fee-usd':'1','trade-selected-tag':'test','trade-custom-note':''}))fields[id]={value};
+  fields['trade-use-cash-buffer']={checked:true};await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,69);assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,25);
+  action='SELL';await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,98);assert.ok(Math.abs(app.tradingHistory[0].realizedPLUSD-16/3)<1e-10);assert.equal(app.tradingHistory[0].feeUSD,1);
+  action='BUY';fields['trade-use-cash-buffer'].checked=false;await app.executeTrade();assert.equal(app.cashFlows[0].type,'DEPOSIT');assert.equal(app.cashFlows[0].amountUSD,31);
 });
 test('failed dividend save does not close form or announce success',async()=>{
   const {app,fields,notices}=runtime();app.portfolios=[p(0)];let closed=false;app.closeModal=()=>closed=true;app.saveData=async()=>false;
@@ -153,4 +153,19 @@ test('THB portfolio goals remain fixed in baht and convert to USD for calculatio
   assert.equal(app.calculatePortfolioStats(port).goalUSD,100);
   app.exchangeRate=40;
   assert.equal(app.getPortfolioGoalUSD(port),80);
+});
+test('lifetime result keeps an old cut loss after rebuy and includes dividends',()=>{
+  const data={...core.empty(),portfolios:[{...p(),holdings:[{id:'h2',ticker:'MSFT',shares:1,avgCostUSD:90,currentPriceUSD:100}]}],
+    tradingHistory:[{id:'old-sale',type:'SELL',portfolioId:'p',totalUSD:60,realizedPLUSD:-40,feeUSD:1}],dividends:[{portfolioId:'p',netUSD:5}]};
+  const result=core.lifetimePerformance(data);
+  assert.equal(result.unrealized,10);assert.equal(result.realized,-40);assert.equal(result.dividends,5);assert.equal(result.profit,-25);
+});
+test('wealth subtracts liabilities and both gauges always stay in range',()=>{
+  const data={...core.empty(),exchangeRate:40,portfolios:[p(100)],wealthAssets:[{id:'gold',type:'metal',name:'Gold',currency:'THB',value:4000,cost:3000,valuedAt:'2026-09-12'}],liabilities:[{id:'loan',type:'loan',name:'Loan',currency:'USD',balance:50,monthlyPayment:5}]};
+  const result=core.wealth(data);assert.equal(result.assetsUSD,200);assert.equal(result.liabilitiesUSD,50);assert.equal(result.netWorthUSD,150);
+  for(const score of [core.wealthStrength(data).score,core.portfolioHealth(data).score])assert.ok(score>=0&&score<=100);
+});
+test('benchmark cache survives cloud normalization',()=>{
+  const cache={updatedAt:'2026-09-12T00:00:00Z',points:{'2026-03-31':{SPY:{total:100,price:99}}}};
+  assert.deepEqual(core.normalize({benchmarkCache:cache}).benchmarkCache,cache);
 });

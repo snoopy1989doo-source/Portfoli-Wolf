@@ -231,9 +231,13 @@ Object.assign(PixelStewardApp.prototype, {
     // Heatmap stays inside Overview; AI export lives inside Settings to keep mobile navigation compact.
     document.querySelectorAll('[data-tab="quarterly"]').forEach(button=>{const span=button.querySelector('span:last-child');if(span)span.textContent='การเติบโต';});
     const form=document.getElementById('form-holding');
-    if(form){const group=document.createElement('div');group.innerHTML='<label for="holding-currency">สกุลเงินต้นทุนและราคาที่กรอก</label><select id="holding-currency" class="form-select"><option value="USD">USD — ดอลลาร์</option><option value="THB">THB — บาท</option></select><p>เงินฝาก: กรอกจำนวน 1 และใส่ยอดเงินในช่องราคา • หุ้นไทยใช้สัญลักษณ์ลงท้าย .BK</p>';form.prepend(group);}
-    if(form){const group=document.createElement('div');group.innerHTML='<label for="holding-asset-type">ประเภทสินทรัพย์</label><select id="holding-asset-type" class="form-select"><option value="market">หุ้น / คริปโต — ดึงราคาจากบริการ</option><option value="manual">เงินฝาก / สินทรัพย์อื่น — กรอกยอดเอง</option></select><label for="holding-dividend-yield">อัตราปันผลคาดการณ์ต่อปี (%) ถ้าทราบ</label><input id="holding-dividend-yield" class="form-input" type="number" min="0" step="any" placeholder="ไม่ระบุ = ไม่คาดการณ์ปันผล">';form.prepend(group);}
-    document.querySelectorAll('label[for="holding-avg-cost"],label[for="holding-current-price"]').forEach(el=>el.textContent=el.htmlFor==='holding-avg-cost'?'ต้นทุนเฉลี่ยต่อหน่วย (สกุลเงินที่เลือก)':'ราคาปัจจุบันต่อหน่วย (สกุลเงินที่เลือก)');
+    if(form){const group=document.createElement('div');group.className='form-group';group.innerHTML='<label for="holding-dividend-yield">อัตราปันผลคาดการณ์ต่อปี (%) ถ้าทราบ</label><input id="holding-dividend-yield" class="form-input" type="number" min="0" step="any" placeholder="ไม่ระบุ = ไม่คาดการณ์ปันผล">';form.querySelector('.modal-footer')?.before(group);}
+    const tradePrice=document.getElementById('trade-price')?.closest('.form-group');
+    tradePrice?.insertAdjacentHTML('afterend','<div class="form-group flex-1"><label for="trade-fee-usd">ค่าธรรมเนียม (USD)</label><input type="number" min="0" step="any" value="0" id="trade-fee-usd" class="form-input font-mono"></div>');
+    const wealthForm=document.getElementById('form-wealth-entry');
+    wealthForm?.addEventListener('submit',event=>{event.preventDefault();this.saveWealthEntry();});
+    document.getElementById('wealth-entry-kind')?.addEventListener('change',()=>this.updateWealthEntryForm());
+    document.getElementById('btn-delete-wealth-entry')?.addEventListener('click',()=>this.deleteWealthEntry());
     document.getElementById('modal-trading-history')?.addEventListener('click',event=>{const b=event.target.closest('[data-delete-trading-month]');if(b)this.deleteTradingHistoryEntry(b.dataset.tradingKey,Number(b.dataset.deleteTradingMonth));});
   },
   openModal(id) {
@@ -251,13 +255,7 @@ Object.assign(PixelStewardApp.prototype, {
   openHoldingModal(id,portId) {
     originalHoldingModal.call(this,id,portId);
     const h=this.portfolios.find(p=>p.id===portId)?.holdings?.find(h=>h.id===id);
-    document.getElementById('holding-currency').value=h?.currency||'USD';
-    document.getElementById('holding-asset-type').value=h?.assetType||'market';
     document.getElementById('holding-dividend-yield').value=h?.dividendYield??'';
-    if(h?.currency==='THB'){
-      document.getElementById('holding-avg-cost').value=h.avgCostNative??h.avgCostUSD*this.exchangeRate;
-      document.getElementById('holding-current-price').value=h.currentPriceNative??h.currentPriceUSD*this.exchangeRate;
-    }
   },
   saveHoldingForm() {
     const get=id=>document.getElementById(id)?.value;
@@ -267,10 +265,9 @@ Object.assign(PixelStewardApp.prototype, {
     if(!/^[\p{L}\p{N}._^=-]{1,30}$/u.test(ticker) || ![shares,cost,price].every(n=>Number.isFinite(n)&&n>=0)){alert('กรอกสัญลักษณ์ จำนวน ต้นทุนและราคาเป็นตัวเลขตั้งแต่ศูนย์');return;}
     if(port.holdings.some(h=>h.ticker.toUpperCase()===ticker&&h.id!==id)){alert('มีสินทรัพย์นี้ในพอร์ตแล้ว กรุณาแก้รายการเดิม');return;}
     const original=this.portfolios.flatMap(p=>p.holdings||[]).find(h=>h.id===id);
-    const currency=get('holding-currency')||'USD';const rate=currency==='THB'?this.exchangeRate:1;
-    const h={...original,id:id||crypto.randomUUID(),ticker,name:get('holding-name')||ticker,shares,currency,
-      avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost/rate,currentPriceUSD:price/rate,change1dPct:Number(get('holding-1d-change'))||0,
-      assetType:get('holding-asset-type')||'market',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
+    const h={...original,id:id||crypto.randomUUID(),ticker,name:get('holding-name')||ticker,shares,currency:'USD',
+      avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:Number(get('holding-1d-change'))||0,
+      assetType:'market',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
     for(let i=1;i<=3;i++)h['dipTarget'+i]=Number(get('holding-dip-target-'+i))||null;
     h.dipTargetUSD=h.dipTarget1;
     this.portfolios.forEach(p=>p.holdings=(p.holdings||[]).filter(x=>x.id!==h.id));port.holdings.push(h);
@@ -357,6 +354,70 @@ Object.assign(PixelStewardApp.prototype, {
       await this.recordQuarterAfterRefresh(requestDate);
     } finally {this.marketSyncing=false;}
   },
+  gaugeHTML(score,title,detail,color='#18d391') {
+    const safe=Math.max(0,Math.min(100,Math.round(Number(score)||0)));
+    return `<article class="wolf-gauge-card" style="--gauge:${safe};--gauge-color:${color}"><div class="wolf-gauge"><div><strong>${safe}</strong><span>/100</span></div></div><h3>${this.escapeHtml(title)}</h3><p>${this.escapeHtml(detail)}</p></article>`;
+  },
+  renderWealthView(container) {
+    const data=this.dataPayload(),summary=PortfolioCore.wealth(data),money=n=>this.formatDual(n).main;
+    const assetTypes={cash:'เงินสด / เงินฝาก',metal:'ทอง เงิน อัญมณี',realestate:'อสังหาริมทรัพย์',bond:'ตราสารหนี้ / หุ้นกู้',other:'สินทรัพย์อื่น'};
+    const assets=(this.wealthAssets||[]).map(a=>`<button class="wealth-row" data-edit-wealth="asset:${a.id}"><span><b>${this.escapeHtml(a.name)}</b><small>${assetTypes[a.type]||'สินทรัพย์'} · ประเมิน ${this.escapeHtml(a.valuedAt||'')}</small></span><strong>${money((Number(a.value)||0)/(a.currency==='THB'?this.exchangeRate:1))}</strong></button>`).join('');
+    const debts=(this.liabilities||[]).map(l=>`<button class="wealth-row debt" data-edit-wealth="liability:${l.id}"><span><b>${this.escapeHtml(l.name)}</b><small>${this.escapeHtml(l.type||'หนี้สิน')} · ชำระ/เดือน ${money((Number(l.monthlyPayment)||0)/(l.currency==='THB'?this.exchangeRate:1))}</small></span><strong>${money((Number(l.balance)||0)/(l.currency==='THB'?this.exchangeRate:1))}</strong></button>`).join('');
+    const ports=this.portfolios.map(p=>`<option value="${p.id}">${p.emoji||'📁'} ${this.escapeHtml(p.name)}</option>`).join('');
+    container.innerHTML=`<section class="wealth-hero"><span>ความมั่งคั่งสุทธิ</span><strong>${money(summary.netWorthUSD)}</strong><small>สินทรัพย์ ${money(summary.assetsUSD)} − หนี้สิน ${money(summary.liabilitiesUSD)}</small></section>
+      <div class="wealth-columns"><section class="overview-section"><div class="section-header"><h2>สินทรัพย์อื่น</h2><button class="btn btn-primary" data-add-wealth="asset">เพิ่มสินทรัพย์</button></div>${assets||'<p>เพิ่มเงินฝาก ทอง อัญมณี อสังหาริมทรัพย์ หรือตราสารหนี้</p>'}</section>
+      <section class="overview-section"><div class="section-header"><h2>หนี้สิน</h2><button class="btn btn-secondary" data-add-wealth="liability">เพิ่มหนี้สิน</button></div>${debts||'<p>ยังไม่มีหนี้สินที่บันทึกไว้</p>'}</section></div>
+      <section class="overview-section"><h2>บันทึกผลขายย้อนหลัง</h2><p>ใช้สำหรับ Cut Loss หรือกำไรที่เกิดก่อนเริ่มใช้แอป เพื่อให้คำตอบ “ตั้งแต่เริ่มลงทุนกำไรจริงหรือไม่” ไม่ลืมรายการเก่า</p><form id="form-manual-result" class="manual-result-grid"><label>พอร์ต<select id="manual-result-port" class="form-select" required>${ports}</select></label><label>หุ้น<input id="manual-result-ticker" class="form-input" required maxlength="30"></label><label>วันที่ขาย<input id="manual-result-date" type="date" class="form-input" required max="${PortfolioCore.bangkokDate()}"></label><label>ต้นทุนหุ้นส่วนที่ขาย (USD)<input id="manual-result-cost" type="number" min="0" step="any" class="form-input" required></label><label>กำไร/ขาดทุนสุทธิ (USD)<input id="manual-result-profit" type="number" step="any" class="form-input" required placeholder="ขาดทุนใส่เครื่องหมาย -"></label><label>ค่าธรรมเนียมที่รวมในผลสุทธิ (USD)<input id="manual-result-fee" type="number" min="0" step="any" value="0" class="form-input"></label><button class="btn btn-primary" type="submit">บันทึกผลขาย</button></form></section>`;
+    container.querySelectorAll('[data-add-wealth]').forEach(b=>b.addEventListener('click',()=>this.openWealthEntry(b.dataset.addWealth)));
+    container.querySelectorAll('[data-edit-wealth]').forEach(b=>b.addEventListener('click',()=>{const [kind,id]=b.dataset.editWealth.split(':');this.openWealthEntry(kind,id);}));
+    container.querySelector('#form-manual-result')?.addEventListener('submit',event=>{event.preventDefault();this.saveManualResult();});
+  },
+  openWealthEntry(kind,id='') {
+    const isDebt=kind==='liability',row=(isDebt?this.liabilities:this.wealthAssets).find(x=>x.id===id);
+    document.getElementById('form-wealth-entry').reset();
+    document.getElementById('wealth-entry-kind').value=kind;
+    document.getElementById('wealth-entry-id').value=id;
+    this.updateWealthEntryForm();
+    document.getElementById('wealth-entry-name').value=row?.name||'';
+    document.getElementById('wealth-entry-type').value=row?.type||(isDebt?'mortgage':'cash');
+    document.getElementById('wealth-entry-currency').value=row?.currency||'THB';
+    document.getElementById('wealth-entry-value').value=isDebt?(row?.balance??''):(row?.value??'');
+    document.getElementById('wealth-entry-cost').value=row?.cost??'';
+    document.getElementById('wealth-entry-date').value=row?.valuedAt||PortfolioCore.bangkokDate();
+    document.getElementById('wealth-entry-interest').value=row?.interestRate??'';
+    document.getElementById('wealth-entry-payment').value=row?.monthlyPayment??'';
+    document.getElementById('wealth-entry-due').value=row?.dueDate||'';
+    document.getElementById('wealth-entry-notes').value=row?.notes||'';
+    document.getElementById('btn-delete-wealth-entry').classList.toggle('hidden',!id);
+    this.openModal('modal-wealth-entry');
+  },
+  updateWealthEntryForm() {
+    const debt=document.getElementById('wealth-entry-kind')?.value==='liability';
+    const assetFields=document.getElementById('wealth-asset-fields'),debtFields=document.getElementById('wealth-liability-fields'),type=document.getElementById('wealth-entry-type');
+    if(assetFields)assetFields.hidden=debt;if(debtFields)debtFields.hidden=!debt;
+    if(type){const selected=type.value;type.innerHTML=(debt?[['mortgage','สินเชื่อบ้าน'],['loan','สินเชื่อ / หนี้อื่น'],['credit','บัตรเครดิต']]:[['cash','เงินสด / เงินฝาก'],['metal','ทอง เงิน อัญมณี'],['realestate','อสังหาริมทรัพย์'],['bond','ตราสารหนี้ / หุ้นกู้'],['other','สินทรัพย์อื่น']]).map(([v,l])=>`<option value="${v}">${l}</option>`).join('');if([...type.options].some(o=>o.value===selected))type.value=selected;}
+    const valuedAt=document.getElementById('wealth-entry-date');if(valuedAt)valuedAt.required=!debt;
+    const label=document.querySelector('label[for="wealth-entry-value"]');if(label)label.textContent=debt?'ยอดหนี้คงเหลือ':'มูลค่าปัจจุบัน';
+  },
+  saveWealthEntry() {
+    const g=id=>document.getElementById(id)?.value,kind=g('wealth-entry-kind'),id=g('wealth-entry-id')||crypto.randomUUID(),value=Number(g('wealth-entry-value'));
+    if(!g('wealth-entry-name')||!Number.isFinite(value)||value<0)return alert('กรอกชื่อและมูลค่าให้ถูกต้อง');
+    const common={id,name:g('wealth-entry-name').trim(),type:g('wealth-entry-type'),currency:g('wealth-entry-currency'),notes:g('wealth-entry-notes').trim(),updatedAt:new Date().toISOString()};
+    if(kind==='liability'){const row={...common,balance:value,interestRate:Math.max(0,Number(g('wealth-entry-interest'))||0),monthlyPayment:Math.max(0,Number(g('wealth-entry-payment'))||0),dueDate:g('wealth-entry-due')||null};this.liabilities=[...this.liabilities.filter(x=>x.id!==id),row];}
+    else {const row={...common,value,cost:Math.max(0,Number(g('wealth-entry-cost'))||0),valuedAt:g('wealth-entry-date')||PortfolioCore.bangkokDate()};this.wealthAssets=[...this.wealthAssets.filter(x=>x.id!==id),row];}
+    this.saveData().then(ok=>{if(ok){this.closeModal('modal-wealth-entry');this.renderActiveTab();}});
+  },
+  deleteWealthEntry() {
+    const kind=document.getElementById('wealth-entry-kind').value,id=document.getElementById('wealth-entry-id').value;if(!id||!confirm('ลบรายการนี้ใช่หรือไม่?'))return;
+    if(kind==='liability')this.liabilities=this.liabilities.filter(x=>x.id!==id);else this.wealthAssets=this.wealthAssets.filter(x=>x.id!==id);
+    this.saveData().then(ok=>{if(ok){this.closeModal('modal-wealth-entry');this.renderActiveTab();}});
+  },
+  saveManualResult() {
+    const g=id=>document.getElementById(id)?.value,portfolioId=g('manual-result-port'),ticker=(g('manual-result-ticker')||'').trim().toUpperCase(),date=g('manual-result-date'),cost=Number(g('manual-result-cost')),profit=Number(g('manual-result-profit')),fee=Math.max(0,Number(g('manual-result-fee'))||0);
+    if(!portfolioId||!ticker||!date||![cost,profit].every(Number.isFinite)||cost<0)return alert('กรอกผลขายย้อนหลังให้ครบ');
+    this.tradingHistory.unshift({id:crypto.randomUUID(),date:new Date(date+'T12:00:00+07:00').toISOString(),type:'SELL',portfolioId,portfolioName:this.portfolios.find(p=>p.id===portfolioId)?.name||'',ticker,shares:0,priceUSD:0,totalUSD:Math.max(0,cost+profit+fee),realizedPLUSD:profit,feeUSD:fee,manualResult:true,note:'ผลขายย้อนหลัง'});
+    this.saveData().then(ok=>{if(ok)this.renderActiveTab();});
+  },
   renderQuarterlyView(container) {
     const currency=this.displayCurrency;
     const money=value=>currency==='THB'?this.formatTHB(value):this.formatUSD(value);
@@ -368,21 +429,55 @@ Object.assign(PixelStewardApp.prototype, {
     }).join('');
     container.innerHTML=`<section class="benchmark-card"><h2>การเติบโตของพอร์ต</h2><p>เทียบกับประวัติของคุณเอง • ${currency}</p><p>เข้าเว็บวันสิ้นไตรมาสเพื่อบันทึกยอดอัตโนมัติ ครั้งล่าสุดที่สำเร็จของวันจะเป็นยอดที่เก็บไว้</p><p>31 มีนาคม · 30 มิถุนายน · 30 กันยายน · 31 ธันวาคม (เวลาไทย)</p><p>${this.escapeHtml(this.marketStatus||'กำลังรอราคา')}</p><button class="btn btn-primary" id="btn-take-quarter-snapshot">รีเฟรชและบันทึกวันสิ้นไตรมาส</button></section>
     <section class="benchmark-card"><h3>มูลค่าที่บันทึกจริง</h3><div style="height:300px"><canvas id="chart-growth-actual"></canvas></div>${!snapshots.length?'<p>ยังไม่มีประวัติสิ้นไตรมาส จะไม่สร้างข้อมูลย้อนหลังแทนให้</p>':''}</section>
+    <section class="benchmark-card"><div class="section-header"><div><h3>เทียบตลาด</h3><p>S&amp;P 500 · Nasdaq-100 · Dow Jones</p></div><button class="btn btn-secondary" id="btn-refresh-benchmark">อัปเดตข้อมูลตลาด</button></div><div class="benchmark-mode"><button data-benchmark-mode="total" class="btn btn-sm ${(this.benchmarkMode||'total')==='total'?'active':''}">รวมปันผล</button><button data-benchmark-mode="price" class="btn btn-sm ${this.benchmarkMode==='price'?'active':''}">ราคาอย่างเดียว</button></div><p>โหมดรวมปันผลใช้ Adjusted Close ของ ETF ตัวแทน SPY, QQQ และ DIA เพื่อรวมผลของเงินปันผลและการปรับราคา</p><div id="benchmark-comparison"></div></section>
     <section class="benchmark-card"><h3>แนวโน้มจากประวัติพอร์ต • 1 ปีข้างหน้า</h3><p>${this.escapeHtml(projection.available?projection.assumption:projection.reason)}</p>${projection.available?'<div style="height:260px"><canvas id="chart-growth-forecast"></canvas></div>':''}</section>
     <div class="div-table-wrap"><table class="custom-table"><thead><tr><th>ไตรมาส</th><th>มูลค่า</th><th>เงินเติม</th><th>เงินถอน</th><th>กำไรหลังหักเงินเข้าออก</th><th>ผลตอบแทนประมาณ</th></tr></thead><tbody>${rows||'<tr><td colspan="6">ยังไม่มีข้อมูล</td></tr>'}</tbody></table></div><p>ผลตอบแทนใช้ Modified Dietz ตามวันที่เงินเข้าออก ไม่ใช่การนำส่วนต่างมูลค่ามานับเป็นกำไรทั้งหมด</p>`;
+    container.querySelector('#btn-refresh-benchmark')?.addEventListener('click',()=>this.refreshBenchmarkData());
+    container.querySelectorAll('[data-benchmark-mode]').forEach(b=>b.addEventListener('click',()=>{this.benchmarkMode=b.dataset.benchmarkMode;this.renderQuarterlyView(container);}));
+    this.renderBenchmarkComparison();
     if(typeof Chart==='undefined')return;
     const make=(id,labels,data,dashed)=>new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:[{label:currency,data,borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,.1)',borderDash:dashed?[6,6]:[],tension:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
     if(snapshots.length)this.charts.growth=make('chart-growth-actual',snapshots.map(s=>`${s.quarter}/${s.year}`),snapshots.map(s=>s.totalUSD*(currency==='THB'?s.exchangeRate:1)),false);
     if(projection.available)this.charts.forecast=make('chart-growth-forecast',['ฐานล่าสุด','+3 เดือน','+6 เดือน','+9 เดือน','+12 เดือน'],projection.values,true);
   },
+  async refreshBenchmarkData() {
+    const snapshots=this.quarterlySnapshots.filter(s=>s.recordedAt).slice().sort((a,b)=>a.date.localeCompare(b.date));
+    if(snapshots.length<2)return this.showToast({title:'ต้องมีประวัติจริงอย่างน้อย 2 ไตรมาสก่อนเทียบตลาด',type:'info'});
+    const start=Math.floor((Date.parse(snapshots[0].date+'T00:00:00Z')-10*86400000)/1000),end=Math.floor((Date.parse(snapshots[snapshots.length-1].date+'T23:59:59Z')+3*86400000)/1000);
+    this.setCloudStatus('syncing','กำลังอัปเดตข้อมูลเปรียบเทียบตลาด');
+    const points={};
+    for(const symbol of ['SPY','QQQ','DIA']){
+      const url=`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=${start}&period2=${end}&interval=1d&events=div%2Csplits`;
+      const data=await this.fetchViaFastProxies(url),result=data?.chart?.result?.[0],times=result?.timestamp||[],closes=result?.indicators?.quote?.[0]?.close||[],adjusted=result?.indicators?.adjclose?.[0]?.adjclose||closes;
+      for(const snap of snapshots){const target=Date.parse(snap.date+'T23:59:59Z')/1000;let i=times.length-1;while(i>=0&&(times[i]>target||!(closes[i]>0)))i--;if(i>=0){points[snap.date]||={};points[snap.date][symbol]={price:closes[i],total:adjusted[i]||closes[i],marketDate:new Date(times[i]*1000).toISOString().slice(0,10)};}}
+    }
+    if(!Object.keys(points).length)return this.showToast({title:'ยังดึงข้อมูลตลาดไม่ได้',message:'ลองใหม่เมื่อเครือข่ายหรือ Yahoo พร้อม',type:'error'});
+    this.benchmarkCache={updatedAt:new Date().toISOString(),points};
+    await this.saveData();
+    this.renderActiveTab();
+  },
+  renderBenchmarkComparison() {
+    const host=document.getElementById('benchmark-comparison'),snapshots=this.quarterlySnapshots.filter(s=>s.recordedAt).slice().sort((a,b)=>a.date.localeCompare(b.date)),cache=this.benchmarkCache?.points||{};
+    if(!host)return;
+    const usable=snapshots.filter(s=>cache[s.date]);
+    if(usable.length<2){host.innerHTML='<p>ยังไม่มีข้อมูลเปรียบเทียบ กดอัปเดตหลังมีประวัติจริงอย่างน้อย 2 ไตรมาส</p>';return;}
+    const mode=this.benchmarkMode==='price'?'price':'total',base=usable[0],labels=usable.map(s=>`${s.quarter}/${s.year}`),portfolio=[0],defs=[['SPY','S&P 500','#18d391'],['QQQ','Nasdaq-100','#8b5cf6'],['DIA','Dow Jones','#f59e0b']];
+    for(let i=1;i<usable.length;i++){const period=PortfolioCore.period(usable[i-1],usable[i],this.cashFlows,'USD'),from=Date.parse(usable[i-1].recordedAt),to=Date.parse(usable[i].recordedAt),outsideCash=(this.dividends||[]).filter(d=>!d.addedToCash&&Date.parse(d.date||d.receivedAt)>from&&Date.parse(d.date||d.receivedAt)<=to).reduce((s,d)=>s+(Number(d.netUSD)||0),0),rate=!period.incomplete&&period.denominator>0?(period.profit+outsideCash)/period.denominator:null;portfolio.push(rate==null?null:((1+portfolio[i-1]/100)*(1+rate)-1)*100);}
+    const datasets=[{label:'พอร์ตของคุณ',data:portfolio,borderColor:'#38bdf8',borderWidth:3,tension:0,fill:false},...defs.map(([symbol,label,color])=>{const first=cache[base.date]?.[symbol]?.[mode];return {label,data:usable.map(s=>{const v=cache[s.date]?.[symbol]?.[mode];return first>0&&v>0?(v/first-1)*100:null;}),borderColor:color,tension:0,fill:false};})];
+    host.innerHTML=`<p>ฐานเปรียบเทียบ ${this.escapeHtml(base.date)} · อัปเดต ${this.escapeHtml(this.benchmarkCache.updatedAt||'')}</p><div style="height:300px"><canvas id="chart-benchmark-market"></canvas></div>`;
+    if(typeof Chart!=='undefined')this.charts.marketBenchmark=new Chart(document.getElementById('chart-benchmark-market'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{ticks:{callback:v=>v+'%'}}}}});
+  },
   initBenchmarkChart() {},
   renderDashboardView(container) {
-    const grand=this.calculateGrandTotalStats(),dual=this.formatDual(grand.grandTotalUSD);
-    const cards=this.portfolios.map(p=>{const s=this.calculatePortfolioStats(p),value=this.formatDual(s.totalValueUSD);return `<button class="overview-portfolio" data-overview-port="${p.id}"><span>${this.escapeHtml(p.name)}</span><strong>${value.main}</strong><small>${value.sub} · ${s.assetCount} สินทรัพย์</small><small>เงินสด ${this.formatDual(s.cashBufferUSD).main}</small></button>`;}).join('');
-    container.innerHTML=`<section class="dime-hero-banner"><div class="dime-hero-label">มูลค่าสินทรัพย์รวม</div><div class="dime-main-value">${dual.main}</div><div class="dime-sub-value">${dual.sub}</div><p class="market-caption">${this.escapeHtml(this.marketStatus||'ใช้ราคาที่บันทึกไว้ กำลังรอข้อมูลจากบริการราคา')}</p></section>
-    <div class="overview-metrics"><section><span>กำไรสินทรัพย์ที่ยังไม่ขาย</span><strong class="${grand.totalPLUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(grand.totalPLUSD).main}</strong><small>ไม่รวมต้นทุนค่าเงินย้อนหลัง</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} สินทรัพย์</small></section></div>
+    const data=this.dataPayload(),grand=this.calculateGrandTotalStats(),dual=this.formatDual(grand.grandTotalUSD),life=PortfolioCore.lifetimePerformance(data),health=PortfolioCore.portfolioHealth(data),strength=PortfolioCore.wealthStrength(data);
+    const cards=this.portfolios.map(p=>{const s=this.calculatePortfolioStats(p),value=this.formatDual(s.totalValueUSD),perf=PortfolioCore.lifetimePerformance(data,p.id),goal=this.getPortfolioGoalUSD(p),pct=goal>0?Math.max(0,Math.min(100,s.totalValueUSD/goal*100)):null,remain=pct==null?'ยังไม่ได้ตั้งเป้าหมาย':pct>=100?'ถึงเป้าหมายแล้ว':`เหลืออีก ${(100-pct).toFixed(1)}% ถึงเป้าหมาย`;return `<button class="wolf-portfolio-card" data-overview-port="${p.id}" style="--port-color:${p.color||'#18d391'}"><span class="wolf-port-emoji">${p.emoji||'📁'}</span><span class="wolf-port-copy"><b>${this.escapeHtml(p.name)}</b><strong>${value.main}</strong><small class="${perf.profit>=0?'text-emerald':'text-rose'}">${perf.profit>=0?'กำไร':'ขาดทุน'}จริง ${this.formatDual(Math.abs(perf.profit)).main}</small><small>${remain}</small></span><span class="wolf-port-ring" style="--progress:${pct??0}">${pct==null?'—':Math.round(pct)+'%'}</span></button>`;}).join('');
+    container.innerHTML=`<section class="dime-hero-banner"><div class="dime-hero-label">มูลค่าพอร์ตลงทุน</div><div class="dime-main-value">${dual.main}</div><div class="dime-sub-value">${dual.sub}</div><p class="market-caption">${this.escapeHtml(this.marketStatus||'ใช้ราคาที่บันทึกไว้ กำลังรอข้อมูลจากบริการราคา')}</p></section>
+    <div class="wolf-gauge-grid">${this.gaugeHTML(strength.score,'ความแข็งแกร่งทางการเงิน',`สินทรัพย์ ${this.formatDual(strength.assetsUSD).main} · หนี้ ${this.formatDual(strength.liabilitiesUSD).main}`,'#18d391')}${this.gaugeHTML(health.score,'สุขภาพพอร์ตลงทุน',`กระจายความเสี่ยง ${Math.round(health.diversification)} · คุณภาพข้อมูล ${Math.round(health.dataQuality)}`,'#5b8cff')}</div>
+    <details class="score-method"><summary>คะแนนคำนวณอย่างไร</summary><p><b>ความแข็งแกร่งทางการเงิน:</b> สัดส่วนหนี้ 30% · สภาพคล่องเทียบภาระรายเดือน 25% · มูลค่าสุทธิ 25% · ความหลากหลายประเภทสินทรัพย์ 10% · แนวโน้มไตรมาส 10%</p><p><b>สุขภาพพอร์ต:</b> การกระจาย 35% · ไม่กระจุกตัว 25% · ความสด/ครบของราคา 20% · ความคืบหน้าเป้าหมาย 20%</p><p>การซื้อหรือขายไม่บวกคะแนนตามจำนวนครั้ง ผลของรายการสะท้อนผ่านสัดส่วนพอร์ตและกำไรจริง ปันผลรวมในผลตอบแทนรวม ส่วนหนี้สินมีผลเฉพาะความมั่งคั่งและเกจการเงิน</p></details>
+    <section class="lifetime-result ${life.profit>=0?'positive':'negative'}"><span>ตั้งแต่เริ่มลงทุนมา คุณ${life.profit>=0?'กำไร':'ขาดทุน'}จริง</span><strong>${this.formatDual(Math.abs(life.profit)).main}</strong><div><small>ยังไม่ขาย ${this.formatDual(life.unrealized).main}</small><small>ขายแล้ว ${this.formatDual(life.realized).main}</small><small>ปันผล ${this.formatDual(life.dividends).main}</small><small>ค่าธรรมเนียมที่บันทึก ${this.formatDual(life.fees).main}</small></div><p>กำไรจริง = กำไร/ขาดทุนที่ยังถือ + ผลขายที่บันทึกไว้ + ปันผลสุทธิ ค่าธรรมเนียมรวมอยู่ในต้นทุนและผลขายแล้ว</p></section>
+    <div class="overview-metrics"><section><span>ความมั่งคั่งสุทธิ</span><strong class="${strength.netWorthUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(strength.netWorthUSD).main}</strong><small>รวมสินทรัพย์อื่นและหักหนี้สิน</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} สินทรัพย์ลงทุน</small></section></div>
     <section id="dashboard-heatmap-container" class="overview-section"><div class="section-header"><h3>Heatmap สินทรัพย์</h3></div><p class="market-caption">สีแสดงกำไร/ขาดทุนจากต้นทุน · แถบแสดงสัดส่วนของสินทรัพย์ที่ถือ (ไม่รวมเงินสดและพอร์ตเทรด) · แตะเพื่อดูหรือแก้รายละเอียด</p><div class="heatmap-grid" id="heatmap-tiles-grid">${this.renderHeatmapTilesHTML()}</div></section>
-    <section class="overview-section"><div class="section-header"><h3>พอร์ตของคุณ</h3><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="overview-portfolios">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
+    <section class="overview-section"><div class="section-header"><h3>พอร์ตของคุณ</h3><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="wolf-portfolio-grid">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
     this.rebindHeatmapTileEvents(container);
     container.querySelectorAll('[data-overview-port]').forEach(b=>b.addEventListener('click',()=>{this.selectedPortfolioId=b.dataset.overviewPort;this.switchTab('portfolios');}));
   },

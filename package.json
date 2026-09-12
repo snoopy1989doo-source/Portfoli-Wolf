@@ -1,7 +1,7 @@
 {
-  "name": "pixel-stewart",
+  "name": "portfoli-wolf",
   "version": "1.0.0",
-  "description": "",
+  "description": "Private wealth and investment performance tracker",
   "main": "app.js",
   "scripts": {
     "test": "node --test tests/*.test.cjs",
@@ -9,14 +9,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/snoopy1989doo-source/Pixel-Stewart.git"
+    "url": "git+https://github.com/snoopy1989doo-source/Portfoli-Wolf.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/snoopy1989doo-source/Pixel-Stewart/issues"
+    "url": "https://github.com/snoopy1989doo-source/Portfoli-Wolf/issues"
   },
-  "homepage": "https://github.com/snoopy1989doo-source/Pixel-Stewart#readme"
+  "homepage": "https://github.com/snoopy1989doo-source/Portfoli-Wolf#readme"
 }

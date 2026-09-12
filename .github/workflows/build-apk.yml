@@ -28,7 +28,7 @@ jobs:
       - name: Prepare Web Distribution (www)
         run: |
           mkdir -p www
-          cp index.html style.css app.js manifest.json sw.js www/
+          cp index.html style.css mobile.css app.js app-data.js portfolio-core.js cloud-store.js manifest.json sw.js www/
           cp -r assets www/
 
       - name: Install Dependencies
@@ -39,8 +39,8 @@ jobs:
         run: |
           cat << 'EOF' > capacitor.config.json
           {
-            "appId": "com.snoopy.pixelsteward",
-            "appName": "Pixel Steward",
+            "appId": "com.snoopy.portfoliwolf",
+            "appName": "Portfoli Wolf",
             "webDir": "www"
           }
           EOF
@@ -81,12 +81,12 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p release-output
-          cp android/app/build/outputs/apk/debug/app-debug.apk release-output/PixelSteward.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-output/PortfoliWolf.apk
 
       - name: Upload APK as Downloadable Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PixelSteward-Android-APK
-          path: release-output/PixelSteward.apk
+          name: PortfoliWolf-Android-APK
+          path: release-output/PortfoliWolf.apk
           retention-days: 30
 
