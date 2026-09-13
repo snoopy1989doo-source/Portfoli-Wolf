@@ -49,7 +49,10 @@
     for(const s of value.quarterlySnapshots||[])if(!s||!finite(s.totalUSD)||!Number.isInteger(s.year)||!/^Q[1-4]$/.test(s.quarter)||!finite(s.exchangeRate)||s.exchangeRate===0||!s.portValuesUSD)throw Error('ประวัติไตรมาสไม่ถูกต้อง');
     for(const f of value.cashFlows||[])if(!f||!['DEPOSIT','WITHDRAW','ADJUSTMENT'].includes(f.type)||!Number.isFinite(Date.parse(f.at))||!Number.isFinite(f.amountUSD)||!Number.isFinite(f.amountTHB))throw Error('เงินเข้าออกไม่ถูกต้อง');
     for(const a of value.wealthAssets||[])if(!a||!safeId(a.id)||typeof a.name!=='string'||!['USD','THB'].includes(a.currency)||!finite(a.value)||!finite(a.cost||0)||!Number.isFinite(Date.parse(a.valuedAt)))throw Error('สินทรัพย์ความมั่งคั่งไม่ถูกต้อง');
-    for(const l of value.liabilities||[])if(!l||!safeId(l.id)||typeof l.name!=='string'||!['USD','THB'].includes(l.currency)||!finite(l.balance)||!finite(l.monthlyPayment||0))throw Error('หนี้สินไม่ถูกต้อง');
+    for(const l of value.liabilities||[]){
+      if(!l||!safeId(l.id)||typeof l.name!=='string'||!['USD','THB'].includes(l.currency)||!finite(l.balance)||!finite(l.monthlyPayment||0)||l.payments!==undefined&&!Array.isArray(l.payments))throw Error('หนี้สินไม่ถูกต้อง');
+      for(const p of l.payments||[])if(!p||!safeId(p.id)||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||!finite(p.principal)||p.principal===0||!finite(p.interest||0)||!finite(p.balanceBefore)||!finite(p.balanceAfter))throw Error('ประวัติชำระหนี้ไม่ถูกต้อง');
+    }
     return normalize(value);
   }
   // Reject stale forms atomically: a trade must never save holdings without its cash leg.

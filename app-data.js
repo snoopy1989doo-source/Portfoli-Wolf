@@ -20,6 +20,7 @@ Object.assign(PixelStewardApp.prototype, {
     Object.assign(this, PortfolioCore.empty());
     this.cloudReady = false;
     this.saving = false;
+    this.pendingCloudForms = new WeakSet();
     this.revision = 0;
     this.generation = null;
     this.updateSidebarFxRate();
@@ -67,7 +68,7 @@ Object.assign(PixelStewardApp.prototype, {
     this.connectionRef=this.db.ref('.info/connected');
     this.connectionRef.on('value',snap=>{
       this.isFirebaseOnline=snap.val()===true && !!this.auth.currentUser;
-      this.setCloudStatus(this.isFirebaseOnline?'online':'offline',this.isFirebaseOnline?`เชื่อมต่อแล้ว • ${user.email||'บัญชี Google'}`:'ไม่มีการเชื่อมต่อ — ยังบันทึกไม่ได้');
+      this.setCloudStatus(this.isFirebaseOnline?'online':'offline',this.isFirebaseOnline?'เชื่อมต่อ Cloud แล้ว':'ไม่มีการเชื่อมต่อ — ยังบันทึกไม่ได้');
       if(this.isFirebaseOnline&&this.cloudReady)this.syncLiveMarketPrices();
     });
     this.dbRef.on('value', snap => {
@@ -109,6 +110,9 @@ Object.assign(PixelStewardApp.prototype, {
   },
   acceptCloud(value) {
     Object.assign(this, PortfolioCore.normalize(value.data));
+    if (!this.portfolios.some(port=>port.id===this.selectedPortfolioId)) {
+      this.selectedPortfolioId=this.portfolios[0]?.id||null;
+    }
     this.revision=value.revision;
     this.generation=value.generation;
     this.cloudReady=true;
@@ -119,6 +123,39 @@ Object.assign(PixelStewardApp.prototype, {
   },
   dataPayload() {
     return PortfolioCore.normalize(Object.fromEntries(Object.keys(PortfolioCore.empty()).map(key=>[key,this[key]])));
+  },
+  async recoverCloudReady(timeout=12000) {
+    if (this.cloudReady && this.isFirebaseOnline) return true;
+    if (!this.authUser || !this.dbRef || this.saving) return false;
+    this.setCloudStatus('syncing','กำลังรอข้อมูลล่าสุดจาก Cloud');
+    const started=Date.now();
+    while(Date.now()-started<timeout){
+      try {
+        const snap=await this.dbRef.once('value'),value=snap.val();
+        if(value?.schemaVersion===4)this.acceptCloud(value);
+        if(this.cloudReady&&this.isFirebaseOnline)return true;
+      } catch (_) {}
+      await new Promise(resolve=>setTimeout(resolve,200));
+    }
+    return false;
+  },
+  retryFormWhenCloudReady(form) {
+    if (!form || this.pendingCloudForms.has(form)) return;
+    this.pendingCloudForms.add(form);
+    this.recoverCloudReady().then(ready=>{
+      this.pendingCloudForms.delete(form);
+      if (ready && document.contains(form)) {
+        // Run the retry in a new browser task. Chromium can ignore requestSubmit()
+        // when it is scheduled while the original submit activation is unwinding.
+        setTimeout(()=>{
+          if(!document.contains(form))return;
+          if (typeof form.requestSubmit==='function') form.requestSubmit();
+          else form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+        },0);
+      } else {
+        this.showSaveGate(this.authUser?'ยังโหลดข้อมูลล่าสุดจาก Cloud ไม่สำเร็จ':'เข้าสู่ระบบ Google ก่อนบันทึก');
+      }
+    });
   },
   async saveData(options={}) {
     if (!this.cloudReady || !this.isFirebaseOnline || this.saving || !this.dbRef) {
@@ -153,8 +190,9 @@ Object.assign(PixelStewardApp.prototype, {
       this.saving=false;this.setSavingUI(false);
       this.formRevision=null;
       if (this.cloudBaseline) Object.assign(this,PortfolioCore.normalize(this.cloudBaseline.data));
-      this.cloudReady=false;
-      this.showToast({title:'ยังยืนยันผลบันทึกไม่ได้',message:'โหลดหน้าใหม่เพื่อตรวจยอดล่าสุดก่อนลองซ้ำ ระบบจะไม่ส่งรายการนี้เองเมื่อกลับมาออนไลน์',type:'error'});
+      const denied=error?.code==='PERMISSION_DENIED'||error?.status===401||error?.status===403;
+      if(denied)this.cloudReady=false;
+      this.showToast({title:'ยังยืนยันผลบันทึกไม่ได้',message:denied?'บัญชีนี้ไม่มีสิทธิ์เขียนข้อมูล กรุณาตรวจ Firebase Rules':'ข้อมูลที่กรอกยังอยู่ในฟอร์ม เมื่อ Cloud พร้อมให้กดบันทึกอีกครั้งได้',type:'error'});
       return false;
     }
   },
@@ -180,7 +218,7 @@ Object.assign(PixelStewardApp.prototype, {
     }
     for(const id of new Set([...Object.keys(before.tradingData||{}),...Object.keys(next.tradingData)])){
       if(!!before.tradingData?.[id]===!!next.tradingData[id])continue;
-      next.cashFlows.push({id:crypto.randomUUID(),type:'ADJUSTMENT',portfolioId:'trading:'+id,date:PortfolioCore.bangkokDate(),at:new Date().toISOString(),amountUSD:0,amountTHB:0,note:'เพิ่มหรือลบพอร์ตเทรด'});
+      next.cashFlows.push({id:crypto.randomUUID(),type:'ADJUSTMENT',portfolioId:'trading:'+id,date:PortfolioCore.bangkokDate(),at:new Date().toISOString(),amountUSD:0,amountTHB:0,note:'เพิ่มหรือลบ Risk Investment'});
     }
   },
   setCloudStatus(status,text) {
@@ -200,9 +238,17 @@ Object.assign(PixelStewardApp.prototype, {
       }
     });
     document.addEventListener('submit',event=>{
-      if (!this.cloudReady || !this.isFirebaseOnline || this.saving) {
+      if (this.saving) {
         event.preventDefault(); event.stopImmediatePropagation();
-        this.showSaveGate(this.saving?'กำลังบันทึกรายการก่อนหน้า':'เข้าสู่ระบบและรอข้อมูลล่าสุดก่อนบันทึก');
+        this.showSaveGate('กำลังบันทึกรายการก่อนหน้า');
+        return;
+      }
+      if (!this.cloudReady || !this.isFirebaseOnline) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if(this.authUser&&this.dbRef){
+          this.showSaveGate('กำลังรอข้อมูลล่าสุดจาก Cloud แล้วจะบันทึกต่อ');
+          this.retryFormWhenCloudReady(event.target);
+        } else this.showSaveGate('เข้าสู่ระบบ Google ก่อนบันทึก');
       }
     },true);
     document.addEventListener('click',event=>{
@@ -231,7 +277,11 @@ Object.assign(PixelStewardApp.prototype, {
     // Heatmap stays inside Overview; AI export lives inside Settings to keep mobile navigation compact.
     document.querySelectorAll('[data-tab="quarterly"]').forEach(button=>{const span=button.querySelector('span:last-child');if(span)span.textContent='การเติบโต';});
     const form=document.getElementById('form-holding');
-    if(form){const group=document.createElement('div');group.className='form-group';group.innerHTML='<label for="holding-dividend-yield">อัตราปันผลคาดการณ์ต่อปี (%) ถ้าทราบ</label><input id="holding-dividend-yield" class="form-input" type="number" min="0" step="any" placeholder="ไม่ระบุ = ไม่คาดการณ์ปันผล">';form.querySelector('.modal-footer')?.before(group);}
+    if(form){
+      const sector=document.createElement('div');sector.className='form-group';sector.innerHTML='<label for="holding-sector">Sector (หมวดธุรกิจของหุ้น)</label><select id="holding-sector" class="form-select"><option value="Unclassified">ยังไม่ระบุ</option><option>Technology</option><option>Communication Services</option><option>Consumer Discretionary</option><option>Consumer Staples</option><option>Financials</option><option>Healthcare</option><option>Industrials</option><option>Energy</option><option>Materials</option><option>Utilities</option><option>Real Estate</option><option>ETF / Fund</option><option>Other</option></select><small class="form-hint">ใช้จัดกลุ่มและกรองหุ้นใน Heatmap</small>';
+      const group=document.createElement('div');group.className='form-group';group.innerHTML='<label for="holding-dividend-yield">อัตราปันผลคาดการณ์ต่อปี (%) ถ้าทราบ</label><input id="holding-dividend-yield" class="form-input" type="number" min="0" step="any" placeholder="ไม่ระบุ = ไม่คาดการณ์ปันผล">';
+      form.querySelector('.modal-footer')?.before(sector,group);
+    }
     const tradePrice=document.getElementById('trade-price')?.closest('.form-group');
     tradePrice?.insertAdjacentHTML('afterend','<div class="form-group flex-1"><label for="trade-fee-usd">ค่าธรรมเนียม (USD)</label><input type="number" min="0" step="any" value="0" id="trade-fee-usd" class="form-input font-mono"></div>');
     const wealthForm=document.getElementById('form-wealth-entry');
@@ -253,9 +303,18 @@ Object.assign(PixelStewardApp.prototype, {
     if(!this.saving){this.formRevision=null;if(this.cloudBaseline){Object.assign(this,PortfolioCore.normalize(this.cloudBaseline.data));this.renderActiveTab();}}
   },
   openHoldingModal(id,portId) {
-    originalHoldingModal.call(this,id,portId);
-    const h=this.portfolios.find(p=>p.id===portId)?.holdings?.find(h=>h.id===id);
+    const resolvedPortId=this.portfolios.some(port=>port.id===portId)
+      ? portId
+      : (this.portfolios.some(port=>port.id===this.selectedPortfolioId) ? this.selectedPortfolioId : this.portfolios[0]?.id);
+    if (!resolvedPortId) {
+      this.showToast({title:'เพิ่มพอร์ตก่อนบันทึกหุ้น',type:'error'});
+      return;
+    }
+    this.selectedPortfolioId=resolvedPortId;
+    originalHoldingModal.call(this,id,resolvedPortId);
+    const h=this.portfolios.find(p=>p.id===resolvedPortId)?.holdings?.find(h=>h.id===id);
     document.getElementById('holding-dividend-yield').value=h?.dividendYield??'';
+    document.getElementById('holding-sector').value=h?.sector||'Unclassified';
   },
   saveHoldingForm() {
     const get=id=>document.getElementById(id)?.value;
@@ -267,7 +326,7 @@ Object.assign(PixelStewardApp.prototype, {
     const original=this.portfolios.flatMap(p=>p.holdings||[]).find(h=>h.id===id);
     const h={...original,id:id||crypto.randomUUID(),ticker,name:get('holding-name')||ticker,shares,currency:'USD',
       avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:Number(get('holding-1d-change'))||0,
-      assetType:'market',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
+      assetType:'market',sector:get('holding-sector')||'Unclassified',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
     for(let i=1;i<=3;i++)h['dipTarget'+i]=Number(get('holding-dip-target-'+i))||null;
     h.dipTargetUSD=h.dipTarget1;
     this.portfolios.forEach(p=>p.holdings=(p.holdings||[]).filter(x=>x.id!==h.id));port.holdings.push(h);
@@ -402,8 +461,9 @@ Object.assign(PixelStewardApp.prototype, {
   saveWealthEntry() {
     const g=id=>document.getElementById(id)?.value,kind=g('wealth-entry-kind'),id=g('wealth-entry-id')||crypto.randomUUID(),value=Number(g('wealth-entry-value'));
     if(!g('wealth-entry-name')||!Number.isFinite(value)||value<0)return alert('กรอกชื่อและมูลค่าให้ถูกต้อง');
-    const common={id,name:g('wealth-entry-name').trim(),type:g('wealth-entry-type'),currency:g('wealth-entry-currency'),notes:g('wealth-entry-notes').trim(),updatedAt:new Date().toISOString()};
-    if(kind==='liability'){const row={...common,balance:value,interestRate:Math.max(0,Number(g('wealth-entry-interest'))||0),monthlyPayment:Math.max(0,Number(g('wealth-entry-payment'))||0),dueDate:g('wealth-entry-due')||null};this.liabilities=[...this.liabilities.filter(x=>x.id!==id),row];}
+    const previous=(kind==='liability'?this.liabilities:this.wealthAssets).find(x=>x.id===id);
+    const common={...previous,id,name:g('wealth-entry-name').trim(),type:g('wealth-entry-type'),currency:g('wealth-entry-currency'),notes:g('wealth-entry-notes').trim(),updatedAt:new Date().toISOString()};
+    if(kind==='liability'){const row={...common,balance:value,interestRate:Math.max(0,Number(g('wealth-entry-interest'))||0),monthlyPayment:Math.max(0,Number(g('wealth-entry-payment'))||0),dueDate:g('wealth-entry-due')||null,status:value===0?'paid':'active',paidAt:value===0?(previous?.paidAt||PortfolioCore.bangkokDate()):null,payments:Array.isArray(previous?.payments)?previous.payments:[]};this.liabilities=[...this.liabilities.filter(x=>x.id!==id),row];}
     else {const row={...common,value,cost:Math.max(0,Number(g('wealth-entry-cost'))||0),valuedAt:g('wealth-entry-date')||PortfolioCore.bangkokDate()};this.wealthAssets=[...this.wealthAssets.filter(x=>x.id!==id),row];}
     this.saveData().then(ok=>{if(ok){this.closeModal('modal-wealth-entry');this.renderActiveTab();}});
   },
@@ -476,7 +536,7 @@ Object.assign(PixelStewardApp.prototype, {
     <details class="score-method"><summary>คะแนนคำนวณอย่างไร</summary><p><b>ความแข็งแกร่งทางการเงิน:</b> สัดส่วนหนี้ 30% · สภาพคล่องเทียบภาระรายเดือน 25% · มูลค่าสุทธิ 25% · ความหลากหลายประเภทสินทรัพย์ 10% · แนวโน้มไตรมาส 10%</p><p><b>สุขภาพพอร์ต:</b> การกระจาย 35% · ไม่กระจุกตัว 25% · ความสด/ครบของราคา 20% · ความคืบหน้าเป้าหมาย 20%</p><p>การซื้อหรือขายไม่บวกคะแนนตามจำนวนครั้ง ผลของรายการสะท้อนผ่านสัดส่วนพอร์ตและกำไรจริง ปันผลรวมในผลตอบแทนรวม ส่วนหนี้สินมีผลเฉพาะความมั่งคั่งและเกจการเงิน</p></details>
     <section class="lifetime-result ${life.profit>=0?'positive':'negative'}"><span>ตั้งแต่เริ่มลงทุนมา คุณ${life.profit>=0?'กำไร':'ขาดทุน'}จริง</span><strong>${this.formatDual(Math.abs(life.profit)).main}</strong><div><small>ยังไม่ขาย ${this.formatDual(life.unrealized).main}</small><small>ขายแล้ว ${this.formatDual(life.realized).main}</small><small>ปันผล ${this.formatDual(life.dividends).main}</small><small>ค่าธรรมเนียมที่บันทึก ${this.formatDual(life.fees).main}</small></div><p>กำไรจริง = กำไร/ขาดทุนที่ยังถือ + ผลขายที่บันทึกไว้ + ปันผลสุทธิ ค่าธรรมเนียมรวมอยู่ในต้นทุนและผลขายแล้ว</p></section>
     <div class="overview-metrics"><section><span>ความมั่งคั่งสุทธิ</span><strong class="${strength.netWorthUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(strength.netWorthUSD).main}</strong><small>รวมสินทรัพย์อื่นและหักหนี้สิน</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} สินทรัพย์ลงทุน</small></section></div>
-    <section id="dashboard-heatmap-container" class="overview-section"><div class="section-header"><h3>Heatmap สินทรัพย์</h3></div><p class="market-caption">สีแสดงกำไร/ขาดทุนจากต้นทุน · แถบแสดงสัดส่วนของสินทรัพย์ที่ถือ (ไม่รวมเงินสดและพอร์ตเทรด) · แตะเพื่อดูหรือแก้รายละเอียด</p><div class="heatmap-grid" id="heatmap-tiles-grid">${this.renderHeatmapTilesHTML()}</div></section>
+    <section id="dashboard-heatmap-container" class="overview-section"><div class="section-header"><h3>Heatmap สินทรัพย์</h3></div><p class="market-caption">สีแสดงกำไร/ขาดทุนจากต้นทุน · แถบแสดงสัดส่วนของสินทรัพย์ที่ถือ (ไม่รวมเงินสดและ Risk Investment) · แตะเพื่อดูหรือแก้รายละเอียด</p><div class="heatmap-grid" id="heatmap-tiles-grid">${this.renderHeatmapTilesHTML()}</div></section>
     <section class="overview-section"><div class="section-header"><h3>พอร์ตของคุณ</h3><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="wolf-portfolio-grid">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
     this.rebindHeatmapTileEvents(container);
     container.querySelectorAll('[data-overview-port]').forEach(b=>b.addEventListener('click',()=>{this.selectedPortfolioId=b.dataset.overviewPort;this.switchTab('portfolios');}));

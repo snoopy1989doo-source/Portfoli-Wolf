@@ -17,6 +17,7 @@ function runtime(){
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app.js'),'utf8')+'\nthis.App=PixelStewardApp;',sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app-data.js'),'utf8'),sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root,'app-features.js'),'utf8'),sandbox);
   const app=Object.assign(Object.create(sandbox.App.prototype),core.empty(),{cloudReady:true,isFirebaseOnline:true,revision:0,generation:'g',charts:{},displayCurrency:'USD'});
   for(const name of ['renderActiveTab','renderSpecCountersBar','setCloudStatus','updateSidebarFxRate'])app[name]=()=>{};
   app.showToast=value=>notices.push(value);
@@ -128,7 +129,7 @@ test('trade has both asset and cash legs, saves realized profit and never change
   action='BUY';fields['trade-use-cash-buffer'].checked=false;await app.executeTrade();assert.equal(app.cashFlows[0].type,'DEPOSIT');assert.equal(app.cashFlows[0].amountUSD,31);
 });
 test('failed dividend save does not close form or announce success',async()=>{
-  const {app,fields,notices}=runtime();app.portfolios=[p(0)];let closed=false;app.closeModal=()=>closed=true;app.saveData=async()=>false;
+  const {app,fields,notices}=runtime();app.portfolios=[{...p(0),holdings:[{id:'h',ticker:'MSFT',shares:1,avgCostUSD:1,currentPriceUSD:1}]}];let closed=false;app.closeModal=()=>closed=true;app.saveData=async()=>false;
   for(const [id,value]of Object.entries({'dividend-date':'2026-01-01','dividend-ticker':'MSFT','dividend-portfolio-id':'p','dividend-gross-usd':'10','dividend-tax-usd':'1','dividend-notes':''}))fields[id]={value};
   fields['dividend-add-to-cash-buffer']={checked:true};await app.saveDividendForm();assert.equal(closed,false);assert.equal(notices.length,0);assert.equal(app.dividends[0].addedToCash,true);
 });
@@ -168,4 +169,47 @@ test('wealth subtracts liabilities and both gauges always stay in range',()=>{
 test('benchmark cache survives cloud normalization',()=>{
   const cache={updatedAt:'2026-09-12T00:00:00Z',points:{'2026-03-31':{SPY:{total:100,price:99}}}};
   assert.deepEqual(core.normalize({benchmarkCache:cache}).benchmarkCache,cache);
+});
+test('authenticated form can recover the cloud baseline without reloading the page',async()=>{
+  const {app}=runtime();
+  const cloud={schemaVersion:4,revision:7,generation:'current',data:{...core.empty(),portfolios:[p(250)]}};
+  app.cloudReady=false;app.isFirebaseOnline=true;app.authUser={uid:'owner'};
+  app.dbRef={once:async()=>({val:()=>copy(cloud)})};
+  assert.equal(await app.recoverCloudReady(),true);
+  assert.equal(app.cloudReady,true);assert.equal(app.revision,7);assert.equal(app.portfolios[0].cashBufferUSD,250);
+});
+test('cloud selects an existing first portfolio when the previous id no longer exists',()=>{
+  const {app}=runtime();app.selectedPortfolioId='deleted';
+  app.acceptCloud({schemaVersion:4,revision:1,generation:'g',data:{...core.empty(),portfolios:[{...p(),id:'first'}]}});
+  assert.equal(app.selectedPortfolioId,'first');
+});
+test('queued form submit retries automatically after cloud readiness recovers',async()=>{
+  const {app,sandbox}=runtime();let submitted=0;
+  const form={requestSubmit:()=>submitted++};
+  app.pendingCloudForms=new WeakSet();app.recoverCloudReady=async()=>true;
+  sandbox.document.contains=value=>value===form;sandbox.setTimeout=callback=>callback();
+  app.retryFormWhenCloudReady(form);
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(submitted,1);
+});
+test('JSON backup round trip preserves every persisted collection',()=>{
+  const {app}=runtime();
+  const source={...core.empty(),portfolios:[p(12)],tradingData:{risk:{name:'Risk',monthlyBalances:[{year:2026,month:9,balanceUSD:9}]}},tradingHistory:[{id:'t',type:'SELL',realizedPLUSD:-2}],dividends:[{id:'d',ticker:'MSFT',netUSD:1}],cashFlows:[{id:'f',type:'DEPOSIT',amountUSD:3,amountTHB:99,at:'2026-09-01T12:00:00Z'}],wealthAssets:[{id:'a',name:'Gold',currency:'USD',value:4,valuedAt:'2026-09-01'}],liabilities:[{id:'l',name:'Loan',currency:'USD',balance:5}],quarterlySnapshots:[{year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-09-30T12:00:00Z',totalUSD:12,exchangeRate:33,portValuesUSD:{p:12}}],achievements:[{id:'x'}],benchmarkCache:{updatedAt:'2026-09-12T00:00:00Z',points:{}}};
+  Object.assign(app,source);
+  const restored=core.validateImport(JSON.parse(JSON.stringify(app.dataPayload())));
+  assert.deepEqual(restored,core.normalize(source));
+});
+test('dividend ticker matching ignores case and .BK suffix',()=>{
+  const {app}=runtime();app.portfolios=[{...p(),id:'thai',holdings:[{id:'h',ticker:'PTT.BK',shares:1,avgCostUSD:1,currentPriceUSD:1}]}];
+  assert.equal(app.findDividendHoldingMatches('ptt').length,1);assert.equal(app.findDividendHoldingMatches('PTT.BK')[0].portfolio.id,'thai');
+});
+test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
+  const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
+  for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};
+  await app.saveDebtPayment();const debt=app.liabilities[0];assert.equal(debt.balance,0);assert.equal(debt.status,'paid');assert.equal(debt.payments[0].total,107);assert.equal(debt.payments[0].balanceAfter,0);
+});
+test('portfolio and risk investment order changes are persisted in data order fields',async()=>{
+  const {app}=runtime();app.portfolios=[{...p(),id:'a'},{...p(),id:'b'}];app.tradingData={x:{name:'X',order:1,monthlyBalances:[]},y:{name:'Y',order:2,monthlyBalances:[]}};app.saveData=async()=>true;app.renderActiveTab=()=>{};
+  await app.movePortfolio('b',-1);assert.deepEqual(app.portfolios.map(row=>row.id),['b','a']);
+  await app.moveTradingPortfolio('y',-1);assert.equal(app.tradingData.y.order,1);assert.equal(app.tradingData.x.order,2);
 });

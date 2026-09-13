@@ -134,7 +134,7 @@ class PixelStewardApp {
         id: 'trader_discipline',
         icon: '📈',
         name: 'Cashflow Disciplined',
-        desc: 'บันทึกยอดเงินเทรด Forex/Option ครบถ้วน',
+        desc: 'บันทึกยอดเงิน Risk Investment ครบถ้วน',
         unlocked: grand.totalTradingUSD > 0
       },
       {
@@ -2062,7 +2062,7 @@ class PixelStewardApp {
     const grand = this.calculateGrandTotalStats();
     const ctxAsset = document.getElementById('chart-asset-classes')?.getContext('2d');
     if (ctxAsset) {
-      const labels = ['หุ้นและกองทุน (US Stocks)', 'เงินสดไว้ช้อน (Cash Buffer)', 'พอร์ตเทรด (Forex & Option)'];
+      const labels = ['หุ้นและกองทุน (US Stocks)', 'เงินสดไว้ช้อน (Cash Buffer)', 'Risk Investment'];
       const dataValues = [grand.totalStocksUSD, grand.totalCashBufferUSD, grand.totalTradingUSD];
       const colors = ['#a855f7', '#38bdf8', '#f59e0b'];
 
@@ -2120,7 +2120,7 @@ class PixelStewardApp {
 
       const { totalTradingUSD } = this.getTradingLatestBalances();
       if (totalTradingUSD > 0) {
-        portLabels.push('💱 Trading (Forex & Option)');
+        portLabels.push('💱 Risk Investment');
         portValues.push(totalTradingUSD);
         portColors.push('#f59e0b');
       }
@@ -2990,7 +2990,11 @@ class PixelStewardApp {
     }
   }
 
-  // 3. FOREX & OPTION MONTHLY CAPITAL JOURNAL VIEW
+  // 3. RISK INVESTMENT MONTHLY CAPITAL JOURNAL VIEW
+  getOrderedTradingEntries() {
+    return Object.entries(this.tradingData || {}).sort((a,b)=>(Number(a[1]?.order) || Number.MAX_SAFE_INTEGER)-(Number(b[1]?.order) || Number.MAX_SAFE_INTEGER) || a[0].localeCompare(b[0]));
+  }
+
   renderTradingView(container) {
     const { balances, totalTradingUSD } = this.getTradingLatestBalances();
     const dualTotal = this.formatDual(totalTradingUSD);
@@ -2998,7 +3002,7 @@ class PixelStewardApp {
     let html = `
       <div class="dime-hero-banner" style="background: linear-gradient(135deg, #2d1808 0%, #171108 40%, #0f131a 100%); border-color: rgba(245, 158, 11, 0.3);">
         <div class="dime-hero-header">
-          <span class="dime-hero-label text-amber">พอร์ตเทรดกระแสเงินสด (Forex & Option Trading)</span>
+          <span class="dime-hero-label text-amber">Risk Investment</span>
         </div>
         <div class="dime-main-value font-mono">${dualTotal.main}</div>
         <div class="dime-sub-value font-mono">${dualTotal.sub} • อัปเดตเฉพาะยอดเงินรวมรายเดือน (USD)</div>
@@ -3007,27 +3011,30 @@ class PixelStewardApp {
       <!-- SECTION HEADER WITH ADD TRADING PORTFOLIO BUTTON -->
       <div class="section-header">
         <div class="section-title">
-          <span>รายการพอร์ตเทรด (Trading Accounts)</span>
+          <span>รายการ Risk Investment</span>
           <span class="section-count-badge font-mono">${Object.keys(this.tradingData || {}).length} พอร์ต</span>
         </div>
         <button class="btn btn-sm btn-primary" id="btn-add-trading-port-modal">
-          <span>➕ เพิ่มพอร์ตเทรดใหม่</span>
+          <span>➕ เพิ่ม Risk Investment</span>
         </button>
       </div>
 
       <div class="trading-summary-cards">
     `;
 
-    for (const [key, item] of Object.entries(this.tradingData || {})) {
+    for (const [key, item] of this.getOrderedTradingEntries()) {
       const list = item.monthlyBalances || [];
       const latest = list.length > 0 ? list[list.length - 1] : { balanceUSD: 0, note: '' };
       const latestUSD = latest.balanceUSD || 0;
 
       html += `
-        <div class="trading-port-card" style="border-top: 3px solid ${item.color || '#38bdf8'};">
+        <div class="trading-port-card" data-trading-card="${key}" draggable="true" style="border-top: 3px solid ${item.color || '#38bdf8'};">
           <div class="trading-port-header">
             <div style="display: flex; align-items: center; gap: 8px;">
               <span class="trading-title">${this.escapeHtml(item.name)}</span>
+              <button class="btn-icon-xs drag-handle" type="button" title="ลากเพื่อเรียงลำดับ" aria-label="ลาก ${this.escapeHtml(item.name)} เพื่อเรียงลำดับ">⠿</button>
+              <button class="btn-icon-xs" type="button" data-move-trading="up" data-trading-key="${key}" aria-label="เลื่อนขึ้น">↑</button>
+              <button class="btn-icon-xs" type="button" data-move-trading="down" data-trading-key="${key}" aria-label="เลื่อนลง">↓</button>
               <button class="btn-icon-xs" data-edit-trading-port="${key}" title="แก้ไขชื่อหรือลบพอร์ต">⚙️ แก้ไข/ลบ</button>
             </div>
             <span class="badge font-mono text-amber">Latest: ${this.formatUSD(latestUSD)}</span>
@@ -3054,7 +3061,7 @@ class PixelStewardApp {
       <!-- TRADING EQUITY CURVE CHART -->
       <div class="chart-card">
         <div class="chart-title">
-          <span>📈 กราฟการเติบโตของทุนเทรดรายเดือน (Trading Capital Growth)</span>
+          <span>📈 เงินทุน กระแสเงินสด และผลตอบแทนรายเดือน</span>
         </div>
         <div class="chart-canvas-container" style="height: 280px;">
           <canvas id="chart-trading-equity"></canvas>
@@ -3135,7 +3142,7 @@ class PixelStewardApp {
     const datasets = [];
 
     let colorIdx = 0;
-    for (const [key, item] of Object.entries(this.tradingData || {})) {
+    for (const [key, item] of this.getOrderedTradingEntries()) {
       const color = item.color || defaultColors[colorIdx % defaultColors.length];
       colorIdx++;
 
@@ -3397,13 +3404,13 @@ class PixelStewardApp {
         html += `
           <tr>
             <td>${d.date}</td>
-            <td><strong>${this.escapeHtml(d.ticker)}</strong></td>
+            <td class="dividend-logo-cell" title="${this.escapeHtml(d.ticker)}">${this.renderStockLogoHTML(d.ticker,'#10b981',34)}</td>
             <td>${port ? port.emoji + ' ' + port.name : d.portfolioId}</td>
             <td>${this.formatUSD(d.grossUSD)}</td>
             <td class="text-rose">-${this.formatUSD(d.taxUSD)}</td>
             <td class="text-emerald font-bold">${this.formatUSD(d.netUSD)}</td>
             <td class="text-emerald font-bold">${this.formatTHB(netTHB)}</td>
-            <td style="font-family: var(--font-ui);">${d.notes || '-'}</td>
+            <td style="font-family: var(--font-ui);">${this.escapeHtml(d.notes || '-')}</td>
             <td>
               <button class="btn btn-sm btn-danger" data-delete-dividend="${d.id}">ลบ</button>
             </td>
@@ -3894,7 +3901,7 @@ class PixelStewardApp {
     const navItems = [
       { id: 'dashboard', icon: '📊', title: 'แดชบอร์ดภาพรวม', sub: 'สรุปพอร์ตและเป้าหมายการลงทุน' },
       { id: 'portfolios', icon: '📁', title: 'แยกพอร์ต (พอร์ตการลงทุน & หุ้น)', sub: 'จัดการสินทรัพย์หุ้นและเงินไว้ช้อน' },
-      { id: 'trading', icon: '💱', title: 'Forex & Option Trading', sub: 'บันทึกยอดเงินพอร์ตเทรดกระแสเงินสด' },
+      { id: 'trading', icon: '💱', title: 'Risk Investment', sub: 'ติดตามเงินทุนและกระแสเงินสดของการลงทุนความเสี่ยงสูง' },
       { id: 'dividends', icon: '💰', title: 'บันทึกเงินปันผล', sub: 'ประวัติรับปันผลและ Passive Income' },
       { id: 'wealth', icon: '🏛️', title: 'สินทรัพย์และหนี้สิน', sub: 'วัดความมั่งคั่งสุทธิจากสินทรัพย์ทั้งหมดและหนี้สิน' },
       { id: 'simulator', icon: '🔮', title: 'จำลองเงินล้าน (Simulator)', sub: 'พลังดอกเบี้ยทบต้นและเป้าหมายสู่อิสรภาพ' },
@@ -4710,11 +4717,15 @@ class PixelStewardApp {
 
       // JSON Backup Export
       if (target.id === 'btn-export-json') {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(this.dataPayload(), null, 2));
+        const blob = new Blob([JSON.stringify(this.dataPayload(), null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = dataStr;
+        a.href = url;
         a.download = `portfoli_wolf_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
         a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
         return;
       }
     });
@@ -4765,7 +4776,7 @@ class PixelStewardApp {
     const titleMap = {
       dashboard: 'แดชบอร์ดภาพรวม',
       portfolios: 'พอร์ตการลงทุน & รายการสินทรัพย์',
-      trading: 'Forex & Option Trading',
+      trading: 'Risk Investment',
       dividends: 'บันทึกเงินปันผลรับ (Dividend Log)',
       wealth: 'สินทรัพย์ หนี้สิน & ความมั่งคั่งสุทธิ',
       simulator: 'จำลองเงินล้าน & ดอกเบี้ยทบต้น',
@@ -5177,6 +5188,7 @@ class PixelStewardApp {
     const type = document.querySelector('input[name="trade-type"]:checked')?.value || 'BUY';
     const sharesInput = parseFloat(document.getElementById('trade-shares')?.value) || 0;
     const priceInput = parseFloat(document.getElementById('trade-price')?.value) || (h.currentPriceUSD || h.avgCostUSD || 0);
+    const feeUSD = Math.max(0, Number(document.getElementById('trade-fee-usd')?.value) || 0);
 
     const summaryEl = document.getElementById('trade-holding-summary');
     if (summaryEl) {
@@ -5193,6 +5205,10 @@ class PixelStewardApp {
 
     document.getElementById('trade-total-usd').textContent = this.formatUSD(totalUSD);
     document.getElementById('trade-total-thb').textContent = this.formatTHB(totalTHB);
+    const feePreview=document.getElementById('trade-total-fees');
+    const netPreview=document.getElementById('trade-net-proceeds');
+    if(feePreview)feePreview.textContent=this.formatUSD(feeUSD);
+    if(netPreview)netPreview.textContent=this.formatUSD(type==='SELL'?Math.max(0,totalUSD-feeUSD):totalUSD+feeUSD);
 
     const btnSubmit = document.getElementById('btn-submit-trade');
     const avgLabel = document.getElementById('trade-avg-label');
@@ -5214,7 +5230,7 @@ class PixelStewardApp {
       avgLabel.textContent = 'กำไร/ขาดทุนรับรู้ (Realized P/L):';
 
       const costOfSoldShares = sharesInput * (h.avgCostUSD || 0);
-      const realizedPL = totalUSD - costOfSoldShares;
+      const realizedPL = totalUSD - feeUSD - costOfSoldShares;
       const realizedPct = costOfSoldShares > 0 ? (realizedPL / costOfSoldShares) * 100 : 0;
       avgVal.textContent = `${this.formatUSD(realizedPL)} (${this.formatPercent(realizedPct)})`;
       avgVal.className = `font-mono ${realizedPL >= 0 ? 'text-emerald' : 'text-rose'}`;
@@ -5240,14 +5256,23 @@ class PixelStewardApp {
     const useCashBuffer = document.getElementById('trade-use-cash-buffer').checked;
     const psychologyTag = document.getElementById('trade-selected-tag')?.value || '🎯 ช้อนตามแนวรับ';
     const customNote = (document.getElementById('trade-custom-note')?.value || '').trim();
+    const tradeDate=document.getElementById('trade-executed-date')?.value||PortfolioCore.bangkokDate();
+    const tradeTime=document.getElementById('trade-executed-time')?.value||'12:00';
+    const orderType=document.getElementById('trade-order-type')?.value||'MARKET';
 
     if (!Number.isFinite(tradeShares) || !Number.isFinite(tradePrice) || tradeShares <= 0 || tradePrice <= 0) {
       alert('กรุณากรอกจำนวนหุ้นและราคาให้ถูกต้อง');
       return;
     }
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)||tradeDate>PortfolioCore.bangkokDate()||!/^\d{2}:\d{2}$/.test(tradeTime)){
+      alert('กรุณาตรวจวันที่และเวลาทำรายการ');
+      return;
+    }
 
     const tradeTotalUSD = tradeShares * tradePrice;
-    const feeUSD = Math.max(0, Number(document.getElementById('trade-fee-usd')?.value) || 0);
+    const feeBreakdown={commissionUSD:Math.max(0,Number(document.getElementById('trade-commission-usd')?.value)||0),vatUSD:Math.max(0,Number(document.getElementById('trade-vat-usd')?.value)||0),exchangeFeeUSD:Math.max(0,Number(document.getElementById('trade-exchange-fee-usd')?.value)||0),tafFeeUSD:Math.max(0,Number(document.getElementById('trade-taf-fee-usd')?.value)||0)};
+    const detailedFee=Object.values(feeBreakdown).reduce((sum,value)=>sum+value,0);
+    const feeUSD=Math.max(0,detailedFee||Number(document.getElementById('trade-fee-usd')?.value)||0);
     const costBeforeUSD = this.calculateHoldingStats(h).avgCost;
     h.avgCostUSD = costBeforeUSD;
 
@@ -5302,11 +5327,12 @@ class PixelStewardApp {
     }
 
     if (h.currency === 'THB') h.avgCostNative = h.avgCostUSD * this.exchangeRate;
-    if (!useCashBuffer) { const externalAmount=Math.max(0,type==='BUY'?tradeTotalUSD+feeUSD:tradeTotalUSD-feeUSD); this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:type==='BUY'?'DEPOSIT':'WITHDRAW',date:PortfolioCore.bangkokDate(),at:new Date().toISOString(),amountUSD:externalAmount,amountTHB:externalAmount*this.exchangeRate,note:'เงินภายนอกพอร์ตจากรายการ '+type+' '+h.ticker}); }
+    const executedAt=new Date(`${tradeDate}T${tradeTime}:00+07:00`).toISOString();
+    if (!useCashBuffer) { const externalAmount=Math.max(0,type==='BUY'?tradeTotalUSD+feeUSD:tradeTotalUSD-feeUSD); this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:type==='BUY'?'DEPOSIT':'WITHDRAW',date:tradeDate,at:executedAt,amountUSD:externalAmount,amountTHB:externalAmount*this.exchangeRate,note:'เงินภายนอกพอร์ตจากรายการ '+type+' '+h.ticker}); }
     if (!this.tradingHistory) this.tradingHistory = [];
     this.tradingHistory.unshift({
       id: 'trade-' + Date.now(),
-      date: new Date().toISOString(),
+      date: executedAt,
       type,
       portfolioId: port.id,
       portfolioName: port.name,
@@ -5316,6 +5342,10 @@ class PixelStewardApp {
       totalUSD: tradeTotalUSD,
       realizedPLUSD: type === 'SELL' ? tradeTotalUSD - feeUSD - tradeShares * costBeforeUSD : null,
       feeUSD,
+      feeBreakdown,
+      orderType,
+      grossUSD:tradeTotalUSD,
+      netUSD:type==='SELL'?Math.max(0,tradeTotalUSD-feeUSD):tradeTotalUSD+feeUSD,
       exchangeRate: this.exchangeRate,
       psychologyTag,
       note: customNote
@@ -5545,7 +5575,7 @@ class PixelStewardApp {
       const list = item.monthlyBalances || [];
       const latestUSD = list.length > 0 ? list[list.length - 1].balanceUSD : 0;
 
-      document.getElementById('modal-trading-port-title').textContent = '⚙️ แก้ไขข้อมูลพอร์ตเทรด';
+      document.getElementById('modal-trading-port-title').textContent = '⚙️ แก้ไข Risk Investment';
       document.getElementById('edit-trading-key').value = key;
       document.getElementById('edit-trading-name').value = item.name;
       document.getElementById('edit-trading-color').value = item.color || '#38bdf8';
@@ -5555,17 +5585,17 @@ class PixelStewardApp {
         deleteBtn.classList.remove('hidden');
         deleteBtn.onclick = async (e) => {
           e.preventDefault();
-          if (confirm(`⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบพอร์ตเทรด "${this.escapeHtml(item.name)}" และประวัติทั้งหมด?\n(การกระทำนี้ไม่สามารถย้อนกลับได้)`)) {
+          if (confirm(`ต้องการลบ Risk Investment "${this.escapeHtml(item.name)}" และประวัติทั้งหมดใช่หรือไม่?`)) {
             delete this.tradingData[key];
             if (!await this.saveData()) return;
             this.closeModal('modal-trading-port-edit');
             this.renderActiveTab();
-            alert(`🗑️ ลบพอร์ตเทรด ${this.escapeHtml(item.name)} เรียบร้อยแล้ว`);
+            alert(`ลบ Risk Investment ${this.escapeHtml(item.name)} แล้ว`);
           }
         };
       }
     } else {
-      document.getElementById('modal-trading-port-title').textContent = '➕ เพิ่มพอร์ตเทรดใหม่';
+      document.getElementById('modal-trading-port-title').textContent = '➕ เพิ่ม Risk Investment';
       document.getElementById('form-trading-port-edit').reset();
       document.getElementById('edit-trading-key').value = '';
       document.getElementById('edit-trading-color').value = '#38bdf8';
@@ -5604,6 +5634,7 @@ class PixelStewardApp {
       this.tradingData[newKey] = {
         name,
         color,
+        order: Math.max(0,...Object.values(this.tradingData).map(item=>Number(item.order)||0))+1,
         monthlyBalances: [
           { year: currentYear, month: currentMonth, balanceUSD, note: 'เปิดพอร์ต' }
         ]
@@ -5613,7 +5644,7 @@ class PixelStewardApp {
     if (!await this.saveData()) return;
     this.closeModal('modal-trading-port-edit');
     this.renderActiveTab();
-    alert(`💾 บันทึกพอร์ตเทรด "${name}" สำเร็จ!`);
+    alert(`บันทึก Risk Investment "${name}" แล้ว`);
   }
 
   openTradingHistoryModal(key) {
