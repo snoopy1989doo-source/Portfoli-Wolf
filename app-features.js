@@ -7,24 +7,7 @@
   const baseOpenDividend=proto.openDividendModal;
   const baseRenderTrading=proto.renderTradingView;
 
-  const sectorLabel=value=>value||'Miscellaneous';
   const normalizeTicker=value=>String(value||'').trim().toUpperCase().replace(/\.BK$/,'');
-  const binaryTreemap=(items,x=0,y=0,width=100,height=100,output=[])=>{
-    if(!items.length)return output;
-    if(items.length===1){output.push({...items[0],rect:{x,y,width,height}});return output;}
-    const total=items.reduce((sum,item)=>sum+Math.max(.000001,Number(item.weight)||0),0);
-    let split=1,running=Math.max(.000001,Number(items[0].weight)||0),best=Math.abs(total/2-running);
-    for(let index=2;index<items.length;index++){
-      running+=Math.max(.000001,Number(items[index-1].weight)||0);
-      const difference=Math.abs(total/2-running);if(difference<best){best=difference;split=index;}
-    }
-    const first=items.slice(0,split),second=items.slice(split);
-    const firstWeight=first.reduce((sum,item)=>sum+Math.max(.000001,Number(item.weight)||0),0),ratio=firstWeight/total;
-    if(width>=height){const firstWidth=width*ratio;binaryTreemap(first,x,y,firstWidth,height,output);binaryTreemap(second,x+firstWidth,y,width-firstWidth,height,output);}
-    else {const firstHeight=height*ratio;binaryTreemap(first,x,y,width,firstHeight,output);binaryTreemap(second,x,y+firstHeight,width,height-firstHeight,output);}
-    return output;
-  };
-  const rectStyle=rect=>`left:${rect.x.toFixed(4)}%;top:${rect.y.toFixed(4)}%;width:${rect.width.toFixed(4)}%;height:${rect.height.toFixed(4)}%`;
 
   Object.assign(proto, {
     openModal(id) {
@@ -114,67 +97,19 @@
       this.closeModal('modal-dividend');this.renderActiveTab();this.showToast({title:'บันทึกเงินปันผลบน Cloud แล้ว',message:`${ticker} สุทธิ ${this.formatUSD(netUSD)}`,type:'success'});
     },
 
-    heatmapRows() {
-      const rows=[];
-      for(const portfolio of this.portfolios||[])for(const holding of portfolio.holdings||[]){
-        const stats=this.calculateHoldingStats(holding);
-        rows.push({portfolio,holding,stats,sector:PortfolioCore.tradingViewSector(holding.ticker,holding.name)});
-      }
-      return rows;
-    },
-    heatmapTileClass(pct) {
-      if(pct>=20)return 'heatmap-up-strong';if(pct>=8)return 'heatmap-up-med';if(pct>=0)return 'heatmap-up-light';if(pct>=-8)return 'heatmap-down-light';if(pct>=-20)return 'heatmap-down-med';return 'heatmap-down-strong';
-    },
-    renderDashboardHeatmap() {
-      const all=this.heatmapRows();
-      let rows=all.filter(row=>(this.heatmapPortfolioFilter||'all')==='all'||row.portfolio.id===this.heatmapPortfolioFilter).filter(row=>(this.heatmapSectorFilter||'all')==='all'||row.sector===this.heatmapSectorFilter);
-      const mode=this.heatmapFeatureSort||'value';
-      rows.sort((a,b)=>mode==='gain'?b.stats.unrealizedPLPct-a.stats.unrealizedPLPct:mode==='loss'?a.stats.unrealizedPLPct-b.stats.unrealizedPLPct:b.stats.marketValueUSD-a.stats.marketValueUSD);
-      if(!rows.length)return '<div class="empty-heatmap">ไม่มีหุ้นตรงกับตัวกรองนี้</div>';
-      const groups=new Map();for(const row of rows){if(!groups.has(row.sector))groups.set(row.sector,[]);groups.get(row.sector).push(row);}
-      const sectorItems=[...groups].map(([sector,list])=>({sector,list,weight:list.reduce((sum,row)=>sum+Math.max(.000001,row.stats.marketValueUSD),0)})).sort((a,b)=>b.weight-a.weight);
-      return `<div class="heatmap-mosaic">${binaryTreemap(sectorItems).map(group=>{
-        const holdings=binaryTreemap(group.list.map(row=>({row,weight:Math.max(.000001,row.stats.marketValueUSD)})));
-        return `<section class="heatmap-mosaic-sector" style="${rectStyle(group.rect)}"><div class="heatmap-mosaic-sector-title"><b>${this.escapeHtml(sectorLabel(group.sector))}</b><span>${group.list.length}</span></div><div class="heatmap-sector-canvas">${holdings.map(({row,rect})=>{const {portfolio,holding,stats}=row,pct=stats.unrealizedPLPct||0;return `<button class="heatmap-tile heatmap-mosaic-tile ${this.heatmapTileClass(pct)}" style="${rectStyle(rect)}" data-heatmap-port="${portfolio.id}" data-heatmap-holding="${holding.id}" title="${this.escapeHtml(holding.ticker)} · ${this.escapeHtml(portfolio.name)} · ${pct>=0?'+':''}${pct.toFixed(2)}% · ${this.formatDual(stats.marketValueUSD).main}"><span class="heatmap-mosaic-logo">${this.renderStockLogoHTML(holding.ticker,portfolio.color||'#18d391',38)}</span><strong class="heatmap-mosaic-symbol font-mono">${this.escapeHtml(holding.ticker)}</strong><span class="heatmap-mosaic-pct font-mono">${pct>=0?'+':''}${pct.toFixed(2)}%</span><small class="heatmap-mosaic-value font-mono">${this.formatDual(stats.marketValueUSD).main}</small></button>`;}).join('')}</div></section>`;
-      }).join('')}</div>`;
-    },
-    heatmapExplorerHTML() {
-      const sectors=[...new Set(this.heatmapRows().map(row=>row.sector))].sort((a,b)=>PortfolioCore.TRADINGVIEW_SECTORS.indexOf(a)-PortfolioCore.TRADINGVIEW_SECTORS.indexOf(b));
-      if(this.heatmapSectorFilter!=='all'&&!sectors.includes(this.heatmapSectorFilter))this.heatmapSectorFilter='all';
-      const portfolioOptions=(this.portfolios||[]).map(p=>`<option value="${p.id}" ${this.heatmapPortfolioFilter===p.id?'selected':''}>${p.emoji||'📁'} ${this.escapeHtml(p.name)}</option>`).join('');
-      const sectorOptions=sectors.map(s=>`<option value="${this.escapeHtml(s)}" ${this.heatmapSectorFilter===s?'selected':''}>${this.escapeHtml(sectorLabel(s))}</option>`).join('');
-      return `<div class="heatmap-explorer-panel" role="dialog" aria-modal="true" aria-labelledby="heatmap-explorer-title"><div class="heatmap-explorer-header"><div><span>PORTFOLIO MAP</span><h2 id="heatmap-explorer-title">Heatmap หุ้นแยก Sector</h2></div><button type="button" class="heatmap-explorer-close" aria-label="ปิด Heatmap">×</button></div><div class="heatmap-explorer-tools"><label>พอร์ต<select id="heatmap-filter-portfolio" class="form-select"><option value="all">ทุกพอร์ต</option>${portfolioOptions}</select></label><label>Sector<select id="heatmap-filter-sector" class="form-select"><option value="all">ทุก Sector</option>${sectorOptions}</select></label><div class="heatmap-sort-pill"><button type="button" data-feature-heatmap-sort="value" class="${(this.heatmapFeatureSort||'value')==='value'?'active':''}">มูลค่า</button><button type="button" data-feature-heatmap-sort="gain" class="${this.heatmapFeatureSort==='gain'?'active':''}">กำไร</button><button type="button" data-feature-heatmap-sort="loss" class="${this.heatmapFeatureSort==='loss'?'active':''}">ขาดทุน</button></div></div><div class="heatmap-explorer-map">${this.renderDashboardHeatmap()}</div></div>`;
-    },
-    openHeatmapExplorer() {
-      let overlay=document.getElementById('heatmap-explorer');
-      if(!overlay){overlay=document.createElement('div');overlay.id='heatmap-explorer';overlay.className='heatmap-explorer';document.body.appendChild(overlay);}
-      overlay.innerHTML=this.heatmapExplorerHTML();document.body.classList.add('heatmap-explorer-open');
-      const refresh=()=>{overlay.innerHTML=this.heatmapExplorerHTML();bind();};
-      const bind=()=>{
-        overlay.querySelector('.heatmap-explorer-close')?.addEventListener('click',()=>this.closeHeatmapExplorer());
-        overlay.querySelector('#heatmap-filter-portfolio')?.addEventListener('change',event=>{this.heatmapPortfolioFilter=event.target.value;refresh();});
-        overlay.querySelector('#heatmap-filter-sector')?.addEventListener('change',event=>{this.heatmapSectorFilter=event.target.value;refresh();});
-        overlay.querySelectorAll('[data-feature-heatmap-sort]').forEach(button=>button.addEventListener('click',()=>{this.heatmapFeatureSort=button.dataset.featureHeatmapSort;refresh();}));
-        overlay.querySelectorAll('[data-heatmap-holding]').forEach(button=>button.addEventListener('click',()=>{const holding=button.dataset.heatmapHolding,port=button.dataset.heatmapPort;this.closeHeatmapExplorer();this.openHoldingModal(holding,port);}));
-      };
-      bind();
-    },
-    closeHeatmapExplorer() {
-      document.getElementById('heatmap-explorer')?.remove();document.body.classList.remove('heatmap-explorer-open');
-    },
     dashboardPortfolioCard(port,index) {
-      const stats=this.calculatePortfolioStats(port),value=this.formatDual(stats.totalValueUSD),goal=this.getPortfolioGoalUSD(port),pct=goal>0?Math.max(0,Math.min(100,stats.totalValueUSD/goal*100)):null,remain=pct==null?'ยังไม่ได้ตั้งเป้าหมาย':pct>=100?'ถึงเป้าหมายแล้ว':`เหลืออีก ${(100-pct).toFixed(1)}% ถึงเป้าหมาย`,positive=stats.totalPLUSD>=0;
-      return `<article class="wolf-portfolio-card" data-portfolio-card="${port.id}" draggable="true" style="--port-color:${port.color||'#18d391'}"><div class="portfolio-order-tools"><button type="button" class="drag-handle" title="ลากเพื่อเรียงพอร์ต" aria-label="ลาก ${this.escapeHtml(port.name)} เพื่อเรียงพอร์ต">⠿</button><button type="button" data-move-portfolio="up" data-portfolio-id="${port.id}" aria-label="เลื่อนพอร์ตขึ้น" ${index===0?'disabled':''}>↑</button><button type="button" data-move-portfolio="down" data-portfolio-id="${port.id}" aria-label="เลื่อนพอร์ตลง" ${index===this.portfolios.length-1?'disabled':''}>↓</button></div><button type="button" class="portfolio-card-main" data-overview-port="${port.id}"><span class="wolf-port-emoji">${port.emoji||'📁'}</span><span class="wolf-port-copy"><b>${this.escapeHtml(port.name)}</b><strong>${value.main}</strong><small class="${stats.avg1dChangePct>=0?'text-emerald':'text-rose'}">วันนี้ ${this.formatPercent(stats.avg1dChangePct)}</small><small class="${positive?'text-emerald':'text-rose'}">สินทรัพย์ที่ถือ ${this.formatPercent(stats.totalPLPct)} · ${this.formatDual(stats.totalPLUSD).main}</small><small>${remain}</small></span><span class="wolf-port-ring" style="--progress:${pct??0}">${pct==null?'—':Math.round(pct)+'%'}</span></button></article>`;
+      const stats=this.calculatePortfolioStats(port),value=this.formatDual(stats.totalValueUSD),goal=this.getPortfolioGoalUSD(port),pct=goal>0?Math.max(0,Math.min(100,stats.totalValueUSD/goal*100)):null,positive=stats.totalPLUSD>=0;
+      const progressLabel=pct==null?'ยังไม่ได้ตั้งเป้าหมาย':pct>=100?'ถึงเป้าหมายแล้ว':`${pct.toFixed(1)}% ของเป้าหมาย`;
+      return `<article class="wolf-portfolio-card" data-portfolio-card="${port.id}" draggable="true" style="--port-color:${port.color||'#18d391'}"><div class="portfolio-order-tools"><button type="button" class="drag-handle" title="ลากเพื่อเรียงพอร์ต" aria-label="ลาก ${this.escapeHtml(port.name)} เพื่อเรียงพอร์ต">⠿</button><button type="button" data-move-portfolio="up" data-portfolio-id="${port.id}" aria-label="เลื่อนพอร์ตขึ้น" ${index===0?'disabled':''}>↑</button><button type="button" data-move-portfolio="down" data-portfolio-id="${port.id}" aria-label="เลื่อนพอร์ตลง" ${index===this.portfolios.length-1?'disabled':''}>↓</button></div><button type="button" class="portfolio-card-main" data-overview-port="${port.id}"><span class="wolf-port-emoji">${port.emoji||'📁'}</span><span class="wolf-port-copy"><b>${this.escapeHtml(port.name)}</b><strong>${value.main}</strong><small class="${stats.avg1dChangePct>=0?'text-emerald':'text-rose'}">วันนี้ ${this.formatPercent(stats.avg1dChangePct)}</small><small class="${positive?'text-emerald':'text-rose'}">สินทรัพย์ที่ถือ ${this.formatPercent(stats.totalPLPct)} · ${this.formatDual(stats.totalPLUSD).main}</small><span class="portfolio-progress-head"><small>${progressLabel}</small>${pct==null?'':`<b>${Math.round(pct)}%</b>`}</span><span class="portfolio-progress-bar" role="progressbar" aria-label="ความคืบหน้าเป้าหมายพอร์ต ${this.escapeHtml(port.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct??0)}"><span style="width:${pct??0}%"></span></span></span></button></article>`;
     },
     renderDashboardView(container) {
       const data=this.dataPayload(),grand=this.calculateGrandTotalStats(),dual=this.formatDual(grand.grandTotalUSD),life=PortfolioCore.lifetimePerformance(data),health=PortfolioCore.portfolioHealth(data),strength=PortfolioCore.wealthStrength(data);
       const cards=this.portfolios.map((p,i)=>this.dashboardPortfolioCard(p,i)).join('');
-      container.innerHTML=`<section class="dime-hero-banner"><div class="dime-hero-label">มูลค่าพอร์ตลงทุน</div><div class="dime-main-value">${dual.main}</div><div class="dime-sub-value">${dual.sub}</div><p class="market-caption">${this.escapeHtml(this.marketStatus||'ใช้ราคาที่บันทึกไว้ กำลังรอข้อมูลจากบริการราคา')}</p></section><div class="wolf-gauge-grid">${this.gaugeHTML(strength.score,'ความแข็งแกร่งทางการเงิน',`สินทรัพย์ ${this.formatDual(strength.assetsUSD).main} · หนี้ ${this.formatDual(strength.liabilitiesUSD).main}`,'#18d391')}${this.gaugeHTML(health.score,'สุขภาพพอร์ตลงทุน',`กระจายความเสี่ยง ${Math.round(health.diversification)} · คุณภาพข้อมูล ${Math.round(health.dataQuality)}`,'#5b8cff')}</div><details class="score-method"><summary>คะแนนคำนวณอย่างไร</summary><p><b>ความแข็งแกร่งทางการเงิน:</b> สัดส่วนหนี้ 30% · เงินสด/เงินฝากเทียบภาระรายเดือน 25% · มูลค่าสุทธิ 25% · ความหลากหลายสินทรัพย์ 10% · แนวโน้มไตรมาส 10%</p><p>หุ้น เงินสดในพอร์ต และ Risk Investment รวมเป็นสินทรัพย์และความมั่งคั่งสุทธิ หุ้นไม่ถูกนับเท่าเงินสดในหัวข้อสภาพคล่อง</p><p><b>สุขภาพพอร์ต:</b> การกระจาย 35% · ไม่กระจุกตัว 25% · ความสด/ครบของราคา 20% · ความคืบหน้าเป้าหมาย 20%</p></details><section class="lifetime-result ${life.profit>=0?'positive':'negative'}"><span>ตั้งแต่เริ่มลงทุนมา คุณ${life.profit>=0?'กำไร':'ขาดทุน'}จริง</span><strong>${this.formatDual(Math.abs(life.profit)).main}</strong><div><small>ยังไม่ขาย ${this.formatDual(life.unrealized).main}</small><small>ขายแล้ว ${this.formatDual(life.realized).main}</small><small>ปันผล ${this.formatDual(life.dividends).main}</small><small>ค่าธรรมเนียม ${this.formatDual(life.fees).main}</small></div></section><div class="overview-metrics"><section><span>ความมั่งคั่งสุทธิ</span><strong class="${strength.netWorthUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(strength.netWorthUSD).main}</strong><small>รวมสินทรัพย์อื่นและหักหนี้สิน</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} หุ้น</small></section></div><section class="heatmap-launch-card"><div><span>PORTFOLIO MAP</span><h3>Heatmap หุ้นแยก Sector</h3><p>ดูภาพรวมแบบเต็มจอ พื้นที่ใหญ่เล็กตามมูลค่าที่ถือ สีแสดงกำไรหรือขาดทุน</p></div><button id="btn-open-heatmap" class="btn btn-primary" type="button">เปิด Heatmap</button></section><section class="overview-section"><div class="section-header"><div><h3>พอร์ตของคุณ</h3><p class="market-caption">ลากการ์ดหรือใช้ปุ่ม ↑ ↓ เพื่อจัดลำดับ ลำดับนี้ใช้ในหน้าแยกพอร์ตด้วย</p></div><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="wolf-portfolio-grid">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
+      container.innerHTML=`<section class="dime-hero-banner"><div class="dime-hero-label">มูลค่าพอร์ตลงทุน</div><div class="dime-main-value">${dual.main}</div><div class="dime-sub-value">${dual.sub}</div><p class="market-caption">${this.escapeHtml(this.marketStatus||'ใช้ราคาที่บันทึกไว้ กำลังรอข้อมูลจากบริการราคา')}</p></section><div class="wolf-gauge-grid">${this.gaugeHTML(strength.score,'ความแข็งแกร่งทางการเงิน',`สินทรัพย์ ${this.formatDual(strength.assetsUSD).main} · หนี้ ${this.formatDual(strength.liabilitiesUSD).main}`,'#18d391')}${this.gaugeHTML(health.score,'สุขภาพพอร์ตลงทุน',`กระจายความเสี่ยง ${Math.round(health.diversification)} · คุณภาพข้อมูล ${Math.round(health.dataQuality)}`,'#5b8cff')}</div><details class="score-method"><summary>คะแนนคำนวณอย่างไร</summary><p><b>ความแข็งแกร่งทางการเงิน:</b> สัดส่วนหนี้ 30% · เงินสด/เงินฝากเทียบภาระรายเดือน 25% · มูลค่าสุทธิ 25% · ความหลากหลายสินทรัพย์ 10% · แนวโน้มไตรมาส 10%</p><p>หุ้น เงินสดในพอร์ต และ Risk Investment รวมเป็นสินทรัพย์และความมั่งคั่งสุทธิ หุ้นไม่ถูกนับเท่าเงินสดในหัวข้อสภาพคล่อง</p><p><b>สุขภาพพอร์ต:</b> การกระจาย 35% · ไม่กระจุกตัว 25% · ความสด/ครบของราคา 20% · ความคืบหน้าเป้าหมาย 20%</p></details><section class="lifetime-result ${life.profit>=0?'positive':'negative'}"><span>ตั้งแต่เริ่มลงทุนมา คุณ${life.profit>=0?'กำไร':'ขาดทุน'}จริง</span><strong>${this.formatDual(Math.abs(life.profit)).main}</strong><div><small>ยังไม่ขาย ${this.formatDual(life.unrealized).main}</small><small>ขายแล้ว ${this.formatDual(life.realized).main}</small><small>ปันผล ${this.formatDual(life.dividends).main}</small><small>ค่าธรรมเนียม ${this.formatDual(life.fees).main}</small></div></section><div class="overview-metrics"><section><span>ความมั่งคั่งสุทธิ</span><strong class="${strength.netWorthUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(strength.netWorthUSD).main}</strong><small>รวมสินทรัพย์อื่นและหักหนี้สิน</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} หุ้น</small></section></div><section class="overview-section"><div class="section-header"><div><h3>พอร์ตของคุณ</h3><p class="market-caption">ลากการ์ดหรือใช้ปุ่ม ↑ ↓ เพื่อจัดลำดับ ลำดับนี้ใช้ในหน้าแยกพอร์ตด้วย</p></div><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="wolf-portfolio-grid">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
       this.bindDashboardFeatureEvents(container);
     },
     bindDashboardFeatureEvents(container) {
       container.querySelectorAll('[data-overview-port]').forEach(button=>button.addEventListener('click',()=>{this.selectedPortfolioId=button.dataset.overviewPort;this.switchTab('portfolios');}));
-      container.querySelector('#btn-open-heatmap')?.addEventListener('click',()=>this.openHeatmapExplorer());
       container.querySelectorAll('[data-move-portfolio]').forEach(button=>button.addEventListener('click',()=>this.movePortfolio(button.dataset.portfolioId,button.dataset.movePortfolio==='up'?-1:1)));
       let dragged=null;
       container.querySelectorAll('[data-portfolio-card]').forEach(card=>{

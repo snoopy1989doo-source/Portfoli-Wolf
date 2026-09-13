@@ -203,35 +203,18 @@ test('dividend ticker matching ignores case and .BK suffix',()=>{
   const {app}=runtime();app.portfolios=[{...p(),id:'thai',holdings:[{id:'h',ticker:'PTT.BK',shares:1,avgCostUSD:1,currentPriceUSD:1}]}];
   assert.equal(app.findDividendHoldingMatches('ptt').length,1);assert.equal(app.findDividendHoldingMatches('PTT.BK')[0].portfolio.id,'thai');
 });
-test('heatmap sectors use TradingView taxonomy automatically without unclassified rows',()=>{
-  const expected={ISRG:'Health Technology',NU:'Finance',GEV:'Producer Manufacturing',WMT:'Retail Trade',
-    TSLA:'Consumer Durables',CVX:'Energy Minerals',MSFT:'Technology Services',PG:'Consumer Non-Durables',
-    KO:'Consumer Non-Durables',AVGO:'Electronic Technology',CRWD:'Technology Services',
-    TMO:'Health Technology',SMR:'Producer Manufacturing',V:'Finance',PLTR:'Technology Services',
-    O:'Finance',NVDA:'Electronic Technology',ABT:'Health Technology',AMZN:'Retail Trade',RKLB:'Electronic Technology'};
-  for(const [ticker,sector] of Object.entries(expected))assert.equal(core.tradingViewSector(ticker),sector,ticker);
-  assert.equal(core.tradingViewSector('NEWCO','Unknown company'),'Miscellaneous');
-  assert.ok(!core.TRADINGVIEW_SECTORS.includes('Unclassified'));
-  const normalized=core.normalize({portfolios:[{...p(),holdings:[{id:'h',ticker:'MSFT',name:'Microsoft',sector:'Unclassified'}]}]});
-  assert.equal(normalized.portfolios[0].holdings[0].sector,'Technology Services');
-});
-test('dashboard launches a proportional sector mosaic without repeated sector labels in stock tiles',()=>{
+test('dashboard uses a goal progress bar and omits the retired allocation mosaic',()=>{
   const {app}=runtime();
-  app.portfolios=[{...p(),holdings:[
-    {id:'msft',ticker:'MSFT',shares:1,avgCostUSD:90,currentPriceUSD:100},
-    {id:'cvx',ticker:'CVX',shares:1,avgCostUSD:90,currentPriceUSD:100}
-  ]}];
-  app.heatmapPortfolioFilter='all';app.heatmapSectorFilter='all';app.heatmapFeatureSort='value';
-  const html=app.renderDashboardHeatmap();
-  assert.equal((html.match(/class="heatmap-mosaic-sector"/g)||[]).length,2);
-  assert.equal((html.match(/data-heatmap-holding=/g)||[]).length,2);
-  assert.ok(!html.includes('heatmap-tile-sector'));
-  app.heatmapSectorFilter='Energy Minerals';
-  const filtered=app.renderDashboardHeatmap();assert.ok(filtered.includes('Energy Minerals'));assert.ok(!filtered.includes('ผลลัพธ์'));
-  app.heatmapSectorFilter='all';
-  const container={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};app.renderDashboardView(container);
-  assert.ok(container.innerHTML.includes('id="btn-open-heatmap"'));
-  assert.ok(!container.innerHTML.includes('id="feature-heatmap-results"'));
+  app.portfolios=[{...p(500),goalUSD:1000,name:'Goal portfolio'}];
+  const card=app.dashboardPortfolioCard(app.portfolios[0],0);
+  assert.ok(card.includes('class="portfolio-progress-bar"'));
+  assert.ok(card.includes('width:50%'));
+  assert.ok(card.includes('50.0% ของเป้าหมาย'));
+  assert.ok(!card.includes('เหลืออีก'));
+  assert.ok(!card.includes('wolf-port-ring'));
+  const container={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
+  app.renderDashboardView(container);
+  assert.ok(!container.innerHTML.includes('dashboard-heatmap-container'));
 });
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};

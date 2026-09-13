@@ -6,70 +6,6 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
   const clone = value => JSON.parse(JSON.stringify(value));
-  // TradingView uses the FactSet Industries and Economic Sectors taxonomy.
-  // These ticker assignments are verified against the public TradingView company pages.
-  const TRADINGVIEW_SECTORS = Object.freeze([
-    'Electronic Technology','Technology Services','Finance','Health Technology','Health Services',
-    'Consumer Non-Durables','Consumer Durables','Consumer Services','Retail Trade',
-    'Producer Manufacturing','Process Industries','Non-Energy Minerals','Energy Minerals',
-    'Utilities','Communications','Transportation','Industrial Services','Commercial Services',
-    'Distribution Services','Miscellaneous'
-  ]);
-  const TRADINGVIEW_SECTOR_BY_TICKER = Object.freeze({
-    ISRG:'Health Technology',NU:'Finance',GEV:'Producer Manufacturing',WMT:'Retail Trade',
-    TSLA:'Consumer Durables',CVX:'Energy Minerals',MSFT:'Technology Services',
-    PG:'Consumer Non-Durables',KO:'Consumer Non-Durables',AVGO:'Electronic Technology',
-    CRWD:'Technology Services',TMO:'Health Technology',SMR:'Producer Manufacturing',V:'Finance',
-    PLTR:'Technology Services',O:'Finance',NVDA:'Electronic Technology',ABT:'Health Technology',
-    AMZN:'Retail Trade',RKLB:'Electronic Technology',AAPL:'Electronic Technology',
-    AMD:'Electronic Technology',INTC:'Electronic Technology',QCOM:'Electronic Technology',
-    MU:'Electronic Technology',ARM:'Electronic Technology',DELL:'Electronic Technology',
-    HPQ:'Electronic Technology',IBM:'Technology Services',ORCL:'Technology Services',
-    CRM:'Technology Services',ADBE:'Technology Services',NOW:'Technology Services',
-    PANW:'Technology Services',GOOG:'Technology Services',GOOGL:'Technology Services',
-    META:'Technology Services',NFLX:'Technology Services',JPM:'Finance',BAC:'Finance',
-    C:'Finance',GS:'Finance',MA:'Finance','BRK.B':'Finance','BRK-B':'Finance',
-    JNJ:'Health Technology',LLY:'Health Technology',PFE:'Health Technology',MRK:'Health Technology',
-    UNH:'Health Services',CVS:'Retail Trade',XOM:'Energy Minerals',COP:'Energy Minerals',
-    PEP:'Consumer Non-Durables',COST:'Retail Trade',TGT:'Retail Trade',HD:'Retail Trade',
-    LOW:'Retail Trade',MCD:'Consumer Services',SBUX:'Consumer Services',DIS:'Consumer Services',
-    NKE:'Consumer Non-Durables',CAT:'Producer Manufacturing',DE:'Producer Manufacturing',
-    BA:'Electronic Technology',LMT:'Electronic Technology',UPS:'Transportation',FDX:'Transportation',
-    T:'Communications',VZ:'Communications',NEE:'Utilities',DUK:'Utilities',SO:'Utilities',
-    PTT:'Energy Minerals',PTTEP:'Energy Minerals',TOP:'Energy Minerals',CPALL:'Retail Trade',
-    CRC:'Retail Trade',DELTA:'Electronic Technology',HANA:'Electronic Technology',
-    KCE:'Electronic Technology',AOT:'Transportation',ADVANC:'Communications',TRUE:'Communications',
-    KBANK:'Finance',SCB:'Finance',KTB:'Finance',BBL:'Finance',TISCO:'Finance',
-    BDMS:'Health Services',BH:'Health Services',GULF:'Utilities',GPSC:'Utilities',
-    SCC:'Non-Energy Minerals',CPN:'Finance'
-  });
-  function tradingViewSector(ticker, name = '') {
-    const symbol=String(ticker||'').trim().toUpperCase().replace(/^[A-Z]+:/,'').replace(/\.BK$/,'');
-    if(TRADINGVIEW_SECTOR_BY_TICKER[symbol])return TRADINGVIEW_SECTOR_BY_TICKER[symbol];
-    const text=`${symbol} ${String(name||'')}`.toLowerCase();
-    const rules=[
-      ['Technology Services',/software|cloud|cyber|internet|data |analytics|platform|digital service|information technology|ai /],
-      ['Electronic Technology',/semiconductor|chip|electronic|computer|hardware|aerospace|defen[cs]e|rocket|satellite/],
-      ['Health Services',/hospital|health insurance|managed care|clinic|nursing/],
-      ['Health Technology',/pharma|biotech|medical|diagnostic|laborator|therapeutic|health tech/],
-      ['Finance',/bank|financial|payment|insurance|capital|credit|real estate|realty|reit|leasing/],
-      ['Retail Trade',/retail|store|e-commerce|ecommerce|supermarket|pharmacy/],
-      ['Consumer Non-Durables',/beverage|food|snack|cosmetic|personal care|apparel|footwear|tobacco/],
-      ['Consumer Durables',/automotive|vehicle|motor|homebuilder|furniture|appliance/],
-      ['Consumer Services',/hotel|travel|restaurant|entertainment|streaming|media|casino|education/],
-      ['Energy Minerals',/petroleum|crude|oil|natural gas|coal|energy mineral/],
-      ['Utilities',/electric utility|power utility|water utility|renewable utility/],
-      ['Producer Manufacturing',/manufactur|machinery|electrical product|industrial equipment|automation/],
-      ['Transportation',/airline|airport|shipping|railroad|logistics|transport/],
-      ['Communications',/telecom|communication|wireless carrier/],
-      ['Process Industries',/chemical|fertili[sz]er|paper|packaging|textile/],
-      ['Non-Energy Minerals',/mining|metal|steel|cement|construction material/],
-      ['Industrial Services',/engineering|construction service|oilfield service|environmental service/],
-      ['Commercial Services',/consulting|advertising|staffing|business service|security service/],
-      ['Distribution Services',/wholesale|distributor|distribution service/]
-    ];
-    return rules.find(([,pattern])=>pattern.test(text))?.[0]||'Miscellaneous';
-  }
   const empty = () => ({ portfolios: [], tradingData: {}, quarterlySnapshots: [],
     dividends: [], achievements: [], tradingHistory: [], cashFlows: [], wealthAssets: [],
     liabilities: [], benchmarkCache: {}, exchangeRate: 32.83 });
@@ -91,7 +27,7 @@
     if (value.benchmarkCache && typeof value.benchmarkCache === 'object' && !Array.isArray(value.benchmarkCache)) data.benchmarkCache = clone(value.benchmarkCache);
     if (Number.isFinite(value.exchangeRate) && value.exchangeRate > 0) data.exchangeRate = value.exchangeRate;
     data.portfolios = data.portfolios.filter(p => p && typeof p.id === 'string').map(p => ({...p,
-      holdings: (Array.isArray(p.holdings) ? p.holdings : []).map(h=>({...h,sector:tradingViewSector(h?.ticker,h?.name)}))}));
+      holdings: Array.isArray(p.holdings) ? p.holdings : []}));
     return data;
   }
   function validateImport(value) {
@@ -248,6 +184,5 @@
     return {score:Math.round(debt*.3+liquidity*.25+netWorth*.25+allocation*.1+trend*.1),debt,liquidity,netWorth,allocation,trend,...w};
   }
   return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, commit, period, projection, upsertSnapshot,
-    TRADINGVIEW_SECTORS, tradingViewSector,
     holdingValues, portfolioValue, lifetimePerformance, wealth, portfolioHealth, wealthStrength};
 });

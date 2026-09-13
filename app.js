@@ -36,7 +36,6 @@ class PixelStewardApp {
     this.finnhubApiKey = localStorage.getItem('pixel_finnhub_key') || '';
     this.isPrivacyMode = false;
     this.isSidebarCollapsed = false;
-    this.allocationViewMode = 'donut'; // 'donut' or 'treemap'
     
     // Firebase & Sync State
     this.dbRef = null;
@@ -1320,23 +1319,15 @@ class PixelStewardApp {
         </div>
       </div>
 
-      <!-- VIEW MODE SWITCHER: DONUT VS HEATMAP -->
+      <!-- ASSET ALLOCATION -->
       <div class="view-mode-selector-wrapper">
         <div class="section-title" style="margin: 0;">
           <span>📊 แผนภาพสัดส่วนการลงทุน (Asset Allocation)</span>
         </div>
-        <div class="view-mode-pill">
-          <button type="button" class="view-pill-btn ${this.allocationViewMode !== 'heatmap' ? 'active' : ''}" id="btn-view-donut">
-            <span>🍩 กราฟโดนัท</span>
-          </button>
-          <button type="button" class="view-pill-btn ${this.allocationViewMode === 'heatmap' ? 'active' : ''}" id="btn-view-heatmap">
-            <span>🔥 แผนภาพ Heatmap</span>
-          </button>
-        </div>
       </div>
 
-      <!-- 1. DONUT CHARTS SWIPEABLE CAROUSEL CONTAINER -->
-      <div class="analytics-charts-wrapper" id="dashboard-donut-container" style="${this.allocationViewMode === 'heatmap' ? 'display:none;' : ''}">
+      <!-- DONUT CHARTS SWIPEABLE CAROUSEL CONTAINER -->
+      <div class="analytics-charts-wrapper" id="dashboard-donut-container">
         <div class="donut-carousel-nav-header">
           <div class="donut-swipe-hint font-mono">
             <span>👆 ปัดซ้าย-ขวาเพื่อดูสัดส่วน</span>
@@ -1386,23 +1377,6 @@ class PixelStewardApp {
         </div>
       </div>
 
-      <!-- 2. HEATMAP CONTAINER -->
-      <div class="heatmap-wrapper" id="dashboard-heatmap-container" style="${this.allocationViewMode === 'heatmap' ? '' : 'display:none;'}">
-        <div class="heatmap-header">
-          <div class="heatmap-title-box">
-            <span class="heatmap-title-text font-mono">🔥 Heatmap สัดส่วนพอร์ต & กำไร/ขาดทุน</span>
-            <span style="font-size:11px; color:var(--text-muted);">คลิกที่กล่องเพื่อเปิดพอร์ต</span>
-          </div>
-          <div class="heatmap-sort-pill">
-            <button type="button" class="heatmap-sort-btn ${this.heatmapSortBy !== 'pl' ? 'active' : ''}" data-heatmap-sort="val">💰 ตามมูลค่า</button>
-            <button type="button" class="heatmap-sort-btn ${this.heatmapSortBy === 'pl' ? 'active' : ''}" data-heatmap-sort="pl">📈 ตาม % P/L</button>
-          </div>
-        </div>
-        <div class="heatmap-grid" id="heatmap-tiles-grid">
-          ${this.renderHeatmapTilesHTML()}
-        </div>
-      </div>
-
       <!-- SUB-PORTFOLIOS CARDS SECTION -->
       <div class="section-header">
         <div class="section-title">
@@ -1430,46 +1404,6 @@ class PixelStewardApp {
     `;
 
     container.innerHTML = html;
-
-    // Setup View Mode Toggle (Donut vs Heatmap)
-    const btnDonut = document.getElementById('btn-view-donut');
-    const btnHeatmap = document.getElementById('btn-view-heatmap');
-    const donutContainer = document.getElementById('dashboard-donut-container');
-    const heatmapContainer = document.getElementById('dashboard-heatmap-container');
-
-    btnDonut?.addEventListener('click', () => {
-      this.allocationViewMode = 'donut';
-      btnDonut.classList.add('active');
-      btnHeatmap?.classList.remove('active');
-      if (donutContainer) donutContainer.style.display = 'block';
-      if (heatmapContainer) heatmapContainer.style.display = 'none';
-    });
-
-    btnHeatmap?.addEventListener('click', () => {
-      this.allocationViewMode = 'heatmap';
-      btnHeatmap.classList.add('active');
-      btnDonut?.classList.remove('active');
-      if (donutContainer) donutContainer.style.display = 'none';
-      if (heatmapContainer) heatmapContainer.style.display = 'block';
-    });
-
-    // Heatmap Sort click
-    container.querySelectorAll('[data-heatmap-sort]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const sort = btn.getAttribute('data-heatmap-sort');
-        this.heatmapSortBy = sort;
-        container.querySelectorAll('[data-heatmap-sort]').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const grid = document.getElementById('heatmap-tiles-grid');
-        if (grid) {
-          grid.innerHTML = this.renderHeatmapTilesHTML();
-          this.rebindHeatmapTileEvents(container);
-        }
-      });
-    });
-
-    // Heatmap Tile click to view portfolio
-    this.rebindHeatmapTileEvents(container);
 
     // Setup Portfolio Layout Switcher (Slider vs Compact vs List)
     container.querySelectorAll('[data-port-layout]').forEach(btn => {
@@ -1767,21 +1701,6 @@ class PixelStewardApp {
     }
   }
 
-  rebindHeatmapTileEvents(container) {
-    container.querySelectorAll('.heatmap-tile').forEach(tile => {
-      tile.addEventListener('click', () => {
-        const portId = tile.getAttribute('data-heatmap-port');
-        if (portId) {
-          this.selectedPortfolioId = portId;
-          this.switchTab('portfolios');
-          const holdingId=tile.getAttribute('data-heatmap-holding');
-          if(holdingId)this.openHoldingModal(holdingId,portId);
-        }
-      });
-      tile.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();tile.click();}});
-    });
-  }
-
   renderDashboardPortfoliosLayoutHTML() {
     const layout = this.portLayoutMode || 'slider';
 
@@ -1988,72 +1907,6 @@ class PixelStewardApp {
         }
       }, 40);
     }, { passive: true });
-  }
-
-  renderHeatmapTilesHTML() {
-    const allHoldings = [];
-    this.portfolios.forEach(p => {
-      (p.holdings || []).forEach(h => {
-        const stats = this.calculateHoldingStats(h);
-        if (stats.marketValueUSD > 0) {
-          allHoldings.push({
-            id: h.id,
-            ticker: h.ticker,
-            name: h.name || h.ticker,
-            portId: p.id,
-            portName: p.name,
-            portEmoji: p.emoji || '📁',
-            color: p.color || '#10b981',
-            valUSD: stats.marketValueUSD,
-            valTHB: stats.marketValueTHB,
-            plPct: stats.unrealizedPLPct,
-            plUSD: stats.unrealizedPLUSD,
-            shares: stats.shares
-          });
-        }
-      });
-    });
-
-    if (allHoldings.length === 0) {
-      return `<div style="text-align:center; padding:32px; color:var(--text-muted); grid-column: 1/-1;">ยังไม่มีรายการสินทรัพย์ในพอร์ต</div>`;
-    }
-
-    // Sort by selected mode (value or pl)
-    if (this.heatmapSortBy === 'pl') {
-      allHoldings.sort((a, b) => b.plPct - a.plPct);
-    } else {
-      allHoldings.sort((a, b) => b.valUSD - a.valUSD);
-    }
-
-    const holdingsSum = allHoldings.reduce((sum,h)=>sum+h.valUSD,0);
-    return allHoldings.map(h => {
-      const isUp = h.plPct >= 0;
-      let intensityClass = 'heatmap-flat';
-      if (h.plPct >= 20) intensityClass = 'heatmap-up-strong';
-      else if (h.plPct >= 8) intensityClass = 'heatmap-up-med';
-      else if (h.plPct >= 0) intensityClass = 'heatmap-up-light';
-      else if (h.plPct >= -8) intensityClass = 'heatmap-down-light';
-      else if (h.plPct >= -20) intensityClass = 'heatmap-down-med';
-      else intensityClass = 'heatmap-down-strong';
-
-      return `
-        <div class="heatmap-tile ${intensityClass}" role="button" tabindex="0" data-heatmap-holding="${h.id}" data-heatmap-port="${h.portId}" title="${this.escapeHtml(h.ticker)} (${this.escapeHtml(h.name)}) - P/L: ${isUp ? '+' : ''}${h.plPct.toFixed(2)}%">
-          <div class="heatmap-tile-header">
-            <div style="display:flex; align-items:center; gap:6px;">
-              ${this.renderStockLogoHTML(h.ticker, h.color, 20)}
-              <span class="heatmap-tile-sym font-mono">${this.escapeHtml(h.ticker)}</span>
-            </div>
-            <span class="heatmap-tile-pct font-mono">
-              ${isUp ? '▲ +' : '▼ '}${Math.abs(h.plPct).toFixed(1)}%
-            </span>
-          </div>
-          <div class="heatmap-tile-body">
-            <div class="heatmap-tile-val font-mono">${this.formatDual(h.valUSD).main}</div><div class="heatmap-weight">${(h.valUSD / holdingsSum * 100).toFixed(2)}% ของสินทรัพย์ที่ถือ</div><div class="weight-track"><span style="width:${h.valUSD / holdingsSum * 100}%"></span></div>
-            <div class="heatmap-tile-sub font-mono">${h.portEmoji} ${this.escapeHtml(h.portName)}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
   }
 
   initDashboardCharts() {
