@@ -203,6 +203,18 @@ test('dividend ticker matching ignores case and .BK suffix',()=>{
   const {app}=runtime();app.portfolios=[{...p(),id:'thai',holdings:[{id:'h',ticker:'PTT.BK',shares:1,avgCostUSD:1,currentPriceUSD:1}]}];
   assert.equal(app.findDividendHoldingMatches('ptt').length,1);assert.equal(app.findDividendHoldingMatches('PTT.BK')[0].portfolio.id,'thai');
 });
+test('heatmap sectors use TradingView taxonomy automatically without unclassified rows',()=>{
+  const expected={ISRG:'Health Technology',NU:'Finance',GEV:'Producer Manufacturing',WMT:'Retail Trade',
+    TSLA:'Consumer Durables',CVX:'Energy Minerals',MSFT:'Technology Services',PG:'Consumer Non-Durables',
+    KO:'Consumer Non-Durables',AVGO:'Electronic Technology',CRWD:'Technology Services',
+    TMO:'Health Technology',SMR:'Producer Manufacturing',V:'Finance',PLTR:'Technology Services',
+    O:'Finance',NVDA:'Electronic Technology',ABT:'Health Technology',AMZN:'Retail Trade',RKLB:'Electronic Technology'};
+  for(const [ticker,sector] of Object.entries(expected))assert.equal(core.tradingViewSector(ticker),sector,ticker);
+  assert.equal(core.tradingViewSector('NEWCO','Unknown company'),'Miscellaneous');
+  assert.ok(!core.TRADINGVIEW_SECTORS.includes('Unclassified'));
+  const normalized=core.normalize({portfolios:[{...p(),holdings:[{id:'h',ticker:'MSFT',name:'Microsoft',sector:'Unclassified'}]}]});
+  assert.equal(normalized.portfolios[0].holdings[0].sector,'Technology Services');
+});
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
   for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};

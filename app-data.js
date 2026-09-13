@@ -278,9 +278,8 @@ Object.assign(PixelStewardApp.prototype, {
     document.querySelectorAll('[data-tab="quarterly"]').forEach(button=>{const span=button.querySelector('span:last-child');if(span)span.textContent='การเติบโต';});
     const form=document.getElementById('form-holding');
     if(form){
-      const sector=document.createElement('div');sector.className='form-group';sector.innerHTML='<label for="holding-sector">Sector (หมวดธุรกิจของหุ้น)</label><select id="holding-sector" class="form-select"><option value="Unclassified">ยังไม่ระบุ</option><option>Technology</option><option>Communication Services</option><option>Consumer Discretionary</option><option>Consumer Staples</option><option>Financials</option><option>Healthcare</option><option>Industrials</option><option>Energy</option><option>Materials</option><option>Utilities</option><option>Real Estate</option><option>ETF / Fund</option><option>Other</option></select><small class="form-hint">ใช้จัดกลุ่มและกรองหุ้นใน Heatmap</small>';
       const group=document.createElement('div');group.className='form-group';group.innerHTML='<label for="holding-dividend-yield">อัตราปันผลคาดการณ์ต่อปี (%) ถ้าทราบ</label><input id="holding-dividend-yield" class="form-input" type="number" min="0" step="any" placeholder="ไม่ระบุ = ไม่คาดการณ์ปันผล">';
-      form.querySelector('.modal-footer')?.before(sector,group);
+      form.querySelector('.modal-footer')?.before(group);
     }
     const tradePrice=document.getElementById('trade-price')?.closest('.form-group');
     tradePrice?.insertAdjacentHTML('afterend','<div class="form-group flex-1"><label for="trade-fee-usd">ค่าธรรมเนียม (USD)</label><input type="number" min="0" step="any" value="0" id="trade-fee-usd" class="form-input font-mono"></div>');
@@ -314,7 +313,6 @@ Object.assign(PixelStewardApp.prototype, {
     originalHoldingModal.call(this,id,resolvedPortId);
     const h=this.portfolios.find(p=>p.id===resolvedPortId)?.holdings?.find(h=>h.id===id);
     document.getElementById('holding-dividend-yield').value=h?.dividendYield??'';
-    document.getElementById('holding-sector').value=h?.sector||'Unclassified';
   },
   saveHoldingForm() {
     const get=id=>document.getElementById(id)?.value;
@@ -326,7 +324,7 @@ Object.assign(PixelStewardApp.prototype, {
     const original=this.portfolios.flatMap(p=>p.holdings||[]).find(h=>h.id===id);
     const h={...original,id:id||crypto.randomUUID(),ticker,name:get('holding-name')||ticker,shares,currency:'USD',
       avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:Number(get('holding-1d-change'))||0,
-      assetType:'market',sector:get('holding-sector')||'Unclassified',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
+      assetType:'market',sector:PortfolioCore.tradingViewSector(ticker,get('holding-name')||ticker),dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
     for(let i=1;i<=3;i++)h['dipTarget'+i]=Number(get('holding-dip-target-'+i))||null;
     h.dipTargetUSD=h.dipTarget1;
     this.portfolios.forEach(p=>p.holdings=(p.holdings||[]).filter(x=>x.id!==h.id));port.holdings.push(h);
