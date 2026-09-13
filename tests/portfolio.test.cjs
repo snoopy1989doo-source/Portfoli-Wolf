@@ -215,7 +215,7 @@ test('heatmap sectors use TradingView taxonomy automatically without unclassifie
   const normalized=core.normalize({portfolios:[{...p(),holdings:[{id:'h',ticker:'MSFT',name:'Microsoft',sector:'Unclassified'}]}]});
   assert.equal(normalized.portfolios[0].holdings[0].sector,'Technology Services');
 });
-test('heatmap keeps only the first sector expanded in the all-sector overview',()=>{
+test('dashboard launches a proportional sector mosaic without repeated sector labels in stock tiles',()=>{
   const {app}=runtime();
   app.portfolios=[{...p(),holdings:[
     {id:'msft',ticker:'MSFT',shares:1,avgCostUSD:90,currentPriceUSD:100},
@@ -223,10 +223,15 @@ test('heatmap keeps only the first sector expanded in the all-sector overview',(
   ]}];
   app.heatmapPortfolioFilter='all';app.heatmapSectorFilter='all';app.heatmapFeatureSort='value';
   const html=app.renderDashboardHeatmap();
-  assert.equal((html.match(/<details class="heatmap-sector"/g)||[]).length,2);
-  assert.equal((html.match(/<details class="heatmap-sector" open>/g)||[]).length,1);
+  assert.equal((html.match(/class="heatmap-mosaic-sector"/g)||[]).length,2);
+  assert.equal((html.match(/data-heatmap-holding=/g)||[]).length,2);
+  assert.ok(!html.includes('heatmap-tile-sector'));
   app.heatmapSectorFilter='Energy Minerals';
-  assert.equal((app.renderDashboardHeatmap().match(/<details class="heatmap-sector" open>/g)||[]).length,1);
+  const filtered=app.renderDashboardHeatmap();assert.ok(filtered.includes('Energy Minerals'));assert.ok(!filtered.includes('ผลลัพธ์'));
+  app.heatmapSectorFilter='all';
+  const container={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};app.renderDashboardView(container);
+  assert.ok(container.innerHTML.includes('id="btn-open-heatmap"'));
+  assert.ok(!container.innerHTML.includes('id="feature-heatmap-results"'));
 });
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
