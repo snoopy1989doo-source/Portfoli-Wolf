@@ -215,6 +215,19 @@ test('heatmap sectors use TradingView taxonomy automatically without unclassifie
   const normalized=core.normalize({portfolios:[{...p(),holdings:[{id:'h',ticker:'MSFT',name:'Microsoft',sector:'Unclassified'}]}]});
   assert.equal(normalized.portfolios[0].holdings[0].sector,'Technology Services');
 });
+test('heatmap keeps only the first sector expanded in the all-sector overview',()=>{
+  const {app}=runtime();
+  app.portfolios=[{...p(),holdings:[
+    {id:'msft',ticker:'MSFT',shares:1,avgCostUSD:90,currentPriceUSD:100},
+    {id:'cvx',ticker:'CVX',shares:1,avgCostUSD:90,currentPriceUSD:100}
+  ]}];
+  app.heatmapPortfolioFilter='all';app.heatmapSectorFilter='all';app.heatmapFeatureSort='value';
+  const html=app.renderDashboardHeatmap();
+  assert.equal((html.match(/<details class="heatmap-sector"/g)||[]).length,2);
+  assert.equal((html.match(/<details class="heatmap-sector" open>/g)||[]).length,1);
+  app.heatmapSectorFilter='Energy Minerals';
+  assert.equal((app.renderDashboardHeatmap().match(/<details class="heatmap-sector" open>/g)||[]).length,1);
+});
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
   for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};
