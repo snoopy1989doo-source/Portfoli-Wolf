@@ -3903,7 +3903,7 @@ class PixelStewardApp {
       } else if (action === 'reorder') {
         this.openReorderPortfoliosModal();
       } else if (action === 'sync') {
-        this.syncLiveMarketPrices();
+        this.syncLiveMarketPrices({manual:true});
       } else if (action === 'privacy') {
         this.togglePrivacyMode();
       }
@@ -4282,7 +4282,7 @@ class PixelStewardApp {
         type: 'success'
       });
       if (key) {
-        this.syncLiveMarketPrices();
+        this.syncLiveMarketPrices({manual:true});
       }
     });
   }
@@ -4340,8 +4340,8 @@ class PixelStewardApp {
     document.getElementById('rebalance-port-select')?.addEventListener('change', () => this.calculateAndRenderSmartDCA());
 
     // Market Sync Buttons
-    document.getElementById('btn-sync-market-top')?.addEventListener('click', () => this.syncLiveMarketPrices());
-    document.getElementById('btn-sync-market-desktop')?.addEventListener('click', () => this.syncLiveMarketPrices());
+    document.getElementById('btn-sync-market-top')?.addEventListener('click', () => this.syncLiveMarketPrices({manual:true}));
+    document.getElementById('btn-sync-market-desktop')?.addEventListener('click', () => this.syncLiveMarketPrices({manual:true}));
 
     // FX Rate Container Click (Opens FX Modal)
     document.getElementById('fx-rate-container')?.addEventListener('click', () => {

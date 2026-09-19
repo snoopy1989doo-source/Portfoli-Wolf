@@ -12,7 +12,7 @@ function runtime(){
   const sandbox={PortfolioCore:core,console,Date,crypto:require('node:crypto').webcrypto,
     setTimeout:()=>0,clearTimeout(){},setInterval(){},performance,
     window:{},document:{addEventListener(){},getElementById:id=>fields[id]||null,querySelector:()=>null,querySelectorAll:()=>[]},
-    localStorage:{getItem:()=>null,setItem(){}},alert:message=>notices.push(message),
+    localStorage:{getItem:()=>null,setItem(){}},alert:message=>notices.push(message),confirm:()=>true,
     fetch:()=>{throw Error('Network forbidden');}};
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app.js'),'utf8')+'\nthis.App=PixelStewardApp;',sandbox);
@@ -73,16 +73,17 @@ test('forecast needs consecutive real history and does not invent contributions'
   assert.equal(result.values.length,5);
   points[2].quarter='Q4';assert.equal(core.projection(points,[]).available,false);
 });
-test('price refresh does not write holdings to database outside quarter-end',async()=>{
-  const {app}=runtime();let writes=0;
+test('manual Sync Market refreshes prices, reports success and does not write holdings outside quarter-end',async()=>{
+  const {app,notices}=runtime();let writes=0;
   app.portfolios=[{...p(15000),holdings:[{id:'h',ticker:'MSFT',shares:1,currentPriceUSD:100}]}];
   app.dbRef={transaction:()=>{writes++;throw Error('Unexpected write');}};
   app.fetchLiveExchangeRate=async()=>33;
   app.fetchCryptoPrices=async()=>{};app.fetchThaiStockPrices=async()=>{};
   app.fetchBatchStockPrices=async(t,u)=>u.MSFT={priceUSD:120,change1dPct:1};
   app.recordQuarterAfterRefresh=async()=>{};
-  await app.syncLiveMarketPrices();
+  await app.syncLiveMarketPrices({manual:true});
   assert.equal(writes,0);assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,120);
+  assert.equal(notices.at(-1).title,'Sync Market สำเร็จ');
 });
 test('cloud update clears absent dividends and trading history rather than keeping old copies',()=>{
   const {app}=runtime();app.dividends=[{id:'old'}];app.tradingHistory=[{id:'old'}];
@@ -218,8 +219,18 @@ test('dashboard uses a goal progress bar and omits the retired allocation mosaic
 });
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
-  for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};
+  for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-record-id':'','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};
   await app.saveDebtPayment();const debt=app.liabilities[0];assert.equal(debt.balance,0);assert.equal(debt.status,'paid');assert.equal(debt.payments[0].total,107);assert.equal(debt.payments[0].balanceAfter,0);
+});
+test('editing and deleting an old debt payment rebuilds every later balance',async()=>{
+  const {app,fields}=runtime();app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
+  app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',openingBalance:100,balance:50,status:'active',monthlyPayment:10,payments:[
+    {id:'first',date:'2026-08-01',principal:30,interest:3,total:33,balanceBefore:100,balanceAfter:70,note:'first'},
+    {id:'second',date:'2026-09-01',principal:20,interest:2,total:22,balanceBefore:70,balanceAfter:50,note:'second'}
+  ]}];
+  for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-record-id':'first','debt-payment-date':'2026-08-01','debt-payment-principal':'40','debt-payment-interest':'4','debt-payment-note':'corrected'}))fields[id]={value};
+  await app.saveDebtPayment();let debt=app.liabilities[0];assert.equal(debt.balance,40);assert.equal(debt.payments[0].balanceAfter,60);assert.equal(debt.payments[1].balanceBefore,60);assert.equal(debt.payments[1].balanceAfter,40);
+  await app.deleteDebtPayment('loan','second');debt=app.liabilities[0];assert.equal(debt.balance,60);assert.equal(debt.payments.length,1);assert.equal(debt.payments[0].balanceAfter,60);assert.equal(debt.status,'active');
 });
 test('portfolio and risk investment order changes are persisted in data order fields',async()=>{
   const {app}=runtime();app.portfolios=[{...p(),id:'a'},{...p(),id:'b'}];app.tradingData={x:{name:'X',order:1,monthlyBalances:[]},y:{name:'Y',order:2,monthlyBalances:[]}};app.saveData=async()=>true;app.renderActiveTab=()=>{};

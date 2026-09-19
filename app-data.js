@@ -389,8 +389,10 @@ Object.assign(PixelStewardApp.prototype, {
     await this.syncLiveMarketPrices();
   },
   resetCurrentYearQuarterlySnapshots() {this.showToast({title:'เก็บประวัติจริงไว้เพื่อเทียบการเติบโต',type:'info'});},
-  async syncLiveMarketPrices() {
-    if(!this.cloudReady || !this.isFirebaseOnline || this.marketSyncing || this.saving || this.viewDirty || document.querySelector('.modal-backdrop.open'))return;
+  async syncLiveMarketPrices(options={}) {
+    const manual=options===true||options?.manual===true;
+    const blocked=!this.cloudReady||!this.isFirebaseOnline?'กรุณารอให้เชื่อมต่อ Cloud และโหลดข้อมูลล่าสุดก่อน':this.marketSyncing?'กำลังดึงราคาอยู่':this.saving?'กำลังบันทึกข้อมูล กรุณารอสักครู่':this.viewDirty?'มีแบบฟอร์มที่ยังบันทึกไม่เสร็จ':document.querySelector('.modal-backdrop.open')?'กรุณาปิดแบบฟอร์มก่อนอัปเดตราคา':'';
+    if(blocked){if(manual)this.showToast({title:'ยัง Sync Market ไม่ได้',message:blocked,type:'info'});return false;}
     this.marketSyncing=true;
     const requestDate=PortfolioCore.bangkokDate(); const revision=this.revision;
     const tickers=[...new Set(this.portfolios.flatMap(p=>(p.holdings||[]).filter(h=>h.assetType!=='manual').map(h=>h.ticker?.trim().toUpperCase())).filter(Boolean))];
@@ -402,13 +404,20 @@ Object.assign(PixelStewardApp.prototype, {
     try {
       await this.fetchLiveExchangeRate(); // Resolve FX before converting THB quotes.
       await Promise.allSettled([this.fetchCryptoPrices(crypto,updates),this.fetchThaiStockPrices(thai,updates),this.fetchBatchStockPrices(us,updates)]);
-      if(revision!==this.revision || this.viewDirty || this.saving || document.querySelector('.modal-backdrop.open'))return;
+      if(revision!==this.revision || this.viewDirty || this.saving || document.querySelector('.modal-backdrop.open')){if(manual)this.showToast({title:'ยกเลิกการอัปเดตราคา',message:'ข้อมูลมีการเปลี่ยนแปลงระหว่างดึงราคา กรุณากด Sync Market อีกครั้ง',type:'info'});return false;}
       const receivedAt=new Date().toISOString();
       for(const p of this.portfolios)for(const h of p.holdings||[]){const u=updates[h.ticker?.trim().toUpperCase()];if(u && h.assetType!=='manual'){h.currentPriceUSD=u.priceUSD;if(h.currency==='THB')h.currentPriceNative=u.priceUSD*this.exchangeRate;h.change1dPct=u.change1dPct;h.priceReceivedAt=receivedAt;h.priceMarketAt=u.marketAt||null;h.priceSource=u.source|| (h.ticker.endsWith('.BK')?'Yahoo SET (ล่าช้า)':'Crypto API');}}
       this.marketStatus=`รับราคา ${Object.keys(updates).length}/${us.length+thai.length+crypto.length} ตัว • ${new Date().toLocaleTimeString('th-TH')} (เวลารับข้อมูล ไม่ใช่เวลาซื้อขาย)`;
       // Market refresh NEVER writes holdings to the shared database.
       this.updateSidebarFxRate();this.renderSpecCountersBar();this.renderActiveTab();
       await this.recordQuarterAfterRefresh(requestDate);
+      const received=Object.keys(updates).length,total=us.length+thai.length+crypto.length;
+      if(manual)this.showToast(received?{title:'Sync Market สำเร็จ',message:`อัปเดตราคา ${received}/${total} ตัวแล้ว`,type:'success'}:total?{title:'ยังดึงราคาตลาดไม่ได้',message:'ราคาที่บันทึกไว้ไม่ได้ถูกเปลี่ยน กรุณาลองใหม่ภายหลัง',type:'error'}:{title:'ไม่มีสินทรัพย์ที่ต้องอัปเดต',message:'ยังไม่มีหุ้น คริปโต หรือหุ้นไทยในพอร์ต',type:'info'});
+      return received;
+    } catch(error) {
+      this.marketStatus='ดึงราคาตลาดไม่สำเร็จ · ใช้ราคาที่บันทึกไว้';
+      if(manual)this.showToast({title:'Sync Market ไม่สำเร็จ',message:'ราคาที่บันทึกไว้ไม่ได้ถูกเปลี่ยน กรุณาลองใหม่ภายหลัง',type:'error'});
+      return false;
     } finally {this.marketSyncing=false;}
   },
   gaugeHTML(score,title,detail,color='#18d391') {
@@ -461,7 +470,7 @@ Object.assign(PixelStewardApp.prototype, {
     if(!g('wealth-entry-name')||!Number.isFinite(value)||value<0)return alert('กรอกชื่อและมูลค่าให้ถูกต้อง');
     const previous=(kind==='liability'?this.liabilities:this.wealthAssets).find(x=>x.id===id);
     const common={...previous,id,name:g('wealth-entry-name').trim(),type:g('wealth-entry-type'),currency:g('wealth-entry-currency'),notes:g('wealth-entry-notes').trim(),updatedAt:new Date().toISOString()};
-    if(kind==='liability'){const row={...common,balance:value,interestRate:Math.max(0,Number(g('wealth-entry-interest'))||0),monthlyPayment:Math.max(0,Number(g('wealth-entry-payment'))||0),dueDate:g('wealth-entry-due')||null,status:value===0?'paid':'active',paidAt:value===0?(previous?.paidAt||PortfolioCore.bangkokDate()):null,payments:Array.isArray(previous?.payments)?previous.payments:[]};this.liabilities=[...this.liabilities.filter(x=>x.id!==id),row];}
+    if(kind==='liability'){const payments=Array.isArray(previous?.payments)?previous.payments:[],openingBalance=value+payments.reduce((sum,payment)=>sum+(Number(payment.principal)||0),0),row={...common,balance:value,openingBalance,interestRate:Math.max(0,Number(g('wealth-entry-interest'))||0),monthlyPayment:Math.max(0,Number(g('wealth-entry-payment'))||0),dueDate:g('wealth-entry-due')||null,status:value===0?'paid':'active',paidAt:value===0?(previous?.paidAt||PortfolioCore.bangkokDate()):null,payments};this.liabilities=[...this.liabilities.filter(x=>x.id!==id),row];}
     else {const row={...common,value,cost:Math.max(0,Number(g('wealth-entry-cost'))||0),valuedAt:g('wealth-entry-date')||PortfolioCore.bangkokDate()};this.wealthAssets=[...this.wealthAssets.filter(x=>x.id!==id),row];}
     this.saveData().then(ok=>{if(ok){this.closeModal('modal-wealth-entry');this.renderActiveTab();}});
   },
