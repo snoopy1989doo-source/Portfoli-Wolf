@@ -217,6 +217,22 @@ test('dashboard uses a goal progress bar and omits the retired allocation mosaic
   app.renderDashboardView(container);
   assert.ok(!container.innerHTML.includes('dashboard-heatmap-container'));
 });
+test('investment scope removes health and debt UI while retaining legacy backup data',()=>{
+  const {app}=runtime();
+  app.liabilities=[{id:'legacy',name:'Old debt',currency:'THB',balance:100000,payments:[]}];
+  const before=JSON.stringify(app.dataPayload());
+  const container={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
+  app.renderDashboardView(container);
+  assert.ok(!container.innerHTML.includes('wolf-gauge'));
+  assert.ok(!container.innerHTML.includes('สุขภาพ'));
+  assert.ok(!container.innerHTML.includes('ความมั่งคั่งสุทธิ'));
+  app.renderWealthView(container);
+  assert.ok(container.innerHTML.includes('สินทรัพย์ที่บันทึกทั้งหมด'));
+  assert.ok(!container.innerHTML.includes('data-pay-debt'));
+  assert.ok(!container.innerHTML.includes('data-add-wealth="liability"'));
+  assert.ok(!container.innerHTML.includes('Old debt'));
+  assert.equal(JSON.stringify(app.dataPayload()),before);
+});
 test('debt payment preserves history, reduces principal only and archives at zero',async()=>{
   const {app,fields}=runtime();app.liabilities=[{id:'loan',name:'Loan',type:'loan',currency:'THB',balance:100,monthlyPayment:10,payments:[]}];app.saveData=async()=>true;app.closeModal=()=>{};app.renderActiveTab=()=>{};
   for(const [id,value]of Object.entries({'debt-payment-id':'loan','debt-payment-record-id':'','debt-payment-date':'2026-09-13','debt-payment-principal':'100','debt-payment-interest':'7','debt-payment-note':'final'}))fields[id]={value};

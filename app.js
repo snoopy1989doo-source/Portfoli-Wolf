@@ -3756,7 +3756,7 @@ class PixelStewardApp {
       { id: 'portfolios', icon: '📁', title: 'แยกพอร์ต (พอร์ตการลงทุน & หุ้น)', sub: 'จัดการสินทรัพย์หุ้นและเงินไว้ช้อน' },
       { id: 'trading', icon: '💱', title: 'Risk Investment', sub: 'ติดตามเงินทุนและกระแสเงินสดของการลงทุนความเสี่ยงสูง' },
       { id: 'dividends', icon: '💰', title: 'บันทึกเงินปันผล', sub: 'ประวัติรับปันผลและ Passive Income' },
-      { id: 'wealth', icon: '🏛️', title: 'สินทรัพย์และหนี้สิน', sub: 'วัดความมั่งคั่งสุทธิจากสินทรัพย์ทั้งหมดและหนี้สิน' },
+      { id: 'wealth', icon: '🏛️', title: 'สินทรัพย์', sub: 'บันทึกและติดตามมูลค่าสินทรัพย์' },
       { id: 'simulator', icon: '🔮', title: 'จำลองเงินล้าน (Simulator)', sub: 'พลังดอกเบี้ยทบต้นและเป้าหมายสู่อิสรภาพ' },
       { id: 'quarterly', icon: '📈', title: 'เปรียบเทียบผลงานรายไตรมาส', sub: 'Snapshot Q1/Q2/Q3/Q4 และการเติบโต' },
       { id: 'settings', icon: '⚙️', title: 'ตั้งค่า, AI Vault & ฐานข้อมูล', sub: 'จัดการบัญชี Firebase อัตราแลกเปลี่ยน และส่งออก Markdown' }
@@ -4631,7 +4631,7 @@ class PixelStewardApp {
       portfolios: 'พอร์ตการลงทุน & รายการสินทรัพย์',
       trading: 'Risk Investment',
       dividends: 'บันทึกเงินปันผลรับ (Dividend Log)',
-      wealth: 'สินทรัพย์ หนี้สิน & ความมั่งคั่งสุทธิ',
+      wealth: 'สินทรัพย์',
       simulator: 'จำลองเงินล้าน & ดอกเบี้ยทบต้น',
       quarterly: 'เปรียบเทียบผลงานรายไตรมาส',
       obsidian: 'Obsidian & AI Second Brain',

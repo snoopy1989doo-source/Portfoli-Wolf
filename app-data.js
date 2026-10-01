@@ -420,25 +420,8 @@ Object.assign(PixelStewardApp.prototype, {
       return false;
     } finally {this.marketSyncing=false;}
   },
-  gaugeHTML(score,title,detail,color='#18d391') {
-    const safe=Math.max(0,Math.min(100,Math.round(Number(score)||0)));
-    return `<article class="wolf-gauge-card" style="--gauge:${safe};--gauge-color:${color}"><div class="wolf-gauge"><div><strong>${safe}</strong><span>/100</span></div></div><h3>${this.escapeHtml(title)}</h3><p>${this.escapeHtml(detail)}</p></article>`;
-  },
-  renderWealthView(container) {
-    const data=this.dataPayload(),summary=PortfolioCore.wealth(data),money=n=>this.formatDual(n).main;
-    const assetTypes={cash:'เงินสด / เงินฝาก',metal:'ทอง เงิน อัญมณี',realestate:'อสังหาริมทรัพย์',bond:'ตราสารหนี้ / หุ้นกู้',other:'สินทรัพย์อื่น'};
-    const assets=(this.wealthAssets||[]).map(a=>`<button class="wealth-row" data-edit-wealth="asset:${a.id}"><span><b>${this.escapeHtml(a.name)}</b><small>${assetTypes[a.type]||'สินทรัพย์'} · ประเมิน ${this.escapeHtml(a.valuedAt||'')}</small></span><strong>${money((Number(a.value)||0)/(a.currency==='THB'?this.exchangeRate:1))}</strong></button>`).join('');
-    const debts=(this.liabilities||[]).map(l=>`<button class="wealth-row debt" data-edit-wealth="liability:${l.id}"><span><b>${this.escapeHtml(l.name)}</b><small>${this.escapeHtml(l.type||'หนี้สิน')} · ชำระ/เดือน ${money((Number(l.monthlyPayment)||0)/(l.currency==='THB'?this.exchangeRate:1))}</small></span><strong>${money((Number(l.balance)||0)/(l.currency==='THB'?this.exchangeRate:1))}</strong></button>`).join('');
-    const ports=this.portfolios.map(p=>`<option value="${p.id}">${p.emoji||'📁'} ${this.escapeHtml(p.name)}</option>`).join('');
-    container.innerHTML=`<section class="wealth-hero"><span>ความมั่งคั่งสุทธิ</span><strong>${money(summary.netWorthUSD)}</strong><small>สินทรัพย์ ${money(summary.assetsUSD)} − หนี้สิน ${money(summary.liabilitiesUSD)}</small></section>
-      <div class="wealth-columns"><section class="overview-section"><div class="section-header"><h2>สินทรัพย์อื่น</h2><button class="btn btn-primary" data-add-wealth="asset">เพิ่มสินทรัพย์</button></div>${assets||'<p>เพิ่มเงินฝาก ทอง อัญมณี อสังหาริมทรัพย์ หรือตราสารหนี้</p>'}</section>
-      <section class="overview-section"><div class="section-header"><h2>หนี้สิน</h2><button class="btn btn-secondary" data-add-wealth="liability">เพิ่มหนี้สิน</button></div>${debts||'<p>ยังไม่มีหนี้สินที่บันทึกไว้</p>'}</section></div>
-      <section class="overview-section"><h2>บันทึกผลขายย้อนหลัง</h2><p>ใช้สำหรับ Cut Loss หรือกำไรที่เกิดก่อนเริ่มใช้แอป เพื่อให้คำตอบ “ตั้งแต่เริ่มลงทุนกำไรจริงหรือไม่” ไม่ลืมรายการเก่า</p><form id="form-manual-result" class="manual-result-grid"><label>พอร์ต<select id="manual-result-port" class="form-select" required>${ports}</select></label><label>หุ้น<input id="manual-result-ticker" class="form-input" required maxlength="30"></label><label>วันที่ขาย<input id="manual-result-date" type="date" class="form-input" required max="${PortfolioCore.bangkokDate()}"></label><label>ต้นทุนหุ้นส่วนที่ขาย (USD)<input id="manual-result-cost" type="number" min="0" step="any" class="form-input" required></label><label>กำไร/ขาดทุนสุทธิ (USD)<input id="manual-result-profit" type="number" step="any" class="form-input" required placeholder="ขาดทุนใส่เครื่องหมาย -"></label><label>ค่าธรรมเนียมที่รวมในผลสุทธิ (USD)<input id="manual-result-fee" type="number" min="0" step="any" value="0" class="form-input"></label><button class="btn btn-primary" type="submit">บันทึกผลขาย</button></form></section>`;
-    container.querySelectorAll('[data-add-wealth]').forEach(b=>b.addEventListener('click',()=>this.openWealthEntry(b.dataset.addWealth)));
-    container.querySelectorAll('[data-edit-wealth]').forEach(b=>b.addEventListener('click',()=>{const [kind,id]=b.dataset.editWealth.split(':');this.openWealthEntry(kind,id);}));
-    container.querySelector('#form-manual-result')?.addEventListener('submit',event=>{event.preventDefault();this.saveManualResult();});
-  },
   openWealthEntry(kind,id='') {
+    if(kind!=='asset')return;
     const isDebt=kind==='liability',row=(isDebt?this.liabilities:this.wealthAssets).find(x=>x.id===id);
     document.getElementById('form-wealth-entry').reset();
     document.getElementById('wealth-entry-kind').value=kind;
@@ -503,7 +486,7 @@ Object.assign(PixelStewardApp.prototype, {
     container.querySelectorAll('[data-benchmark-mode]').forEach(b=>b.addEventListener('click',()=>{this.benchmarkMode=b.dataset.benchmarkMode;this.renderQuarterlyView(container);}));
     this.renderBenchmarkComparison();
     if(typeof Chart==='undefined')return;
-    const make=(id,labels,data,dashed)=>new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:[{label:currency,data,borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,.1)',borderDash:dashed?[6,6]:[],tension:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
+    const make=(id,labels,data,dashed)=>new Chart(document.getElementById(id),{type:'line',data:{labels,datasets:[{label:currency,data,borderColor:'#38bdf8',backgroundColor:'rgba(56,189,248,.1)',borderDash:dashed?[6,6]:[],tension:.2,cubicInterpolationMode:'monotone',fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false}}}});
     if(snapshots.length)this.charts.growth=make('chart-growth-actual',snapshots.map(s=>`${s.quarter}/${s.year}`),snapshots.map(s=>s.totalUSD*(currency==='THB'?s.exchangeRate:1)),false);
     if(projection.available)this.charts.forecast=make('chart-growth-forecast',['ฐานล่าสุด','+3 เดือน','+6 เดือน','+9 เดือน','+12 เดือน'],projection.values,true);
   },
@@ -535,17 +518,6 @@ Object.assign(PixelStewardApp.prototype, {
     if(typeof Chart!=='undefined')this.charts.marketBenchmark=new Chart(document.getElementById('chart-benchmark-market'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{ticks:{callback:v=>v+'%'}}}}});
   },
   initBenchmarkChart() {},
-  renderDashboardView(container) {
-    const data=this.dataPayload(),grand=this.calculateGrandTotalStats(),dual=this.formatDual(grand.grandTotalUSD),life=PortfolioCore.lifetimePerformance(data),health=PortfolioCore.portfolioHealth(data),strength=PortfolioCore.wealthStrength(data);
-    const cards=this.portfolios.map(p=>{const s=this.calculatePortfolioStats(p),value=this.formatDual(s.totalValueUSD),perf=PortfolioCore.lifetimePerformance(data,p.id),goal=this.getPortfolioGoalUSD(p),pct=goal>0?Math.max(0,Math.min(100,s.totalValueUSD/goal*100)):null,progressLabel=pct==null?'ยังไม่ได้ตั้งเป้าหมาย':pct>=100?'ถึงเป้าหมายแล้ว':`${pct.toFixed(1)}% ของเป้าหมาย`;return `<button class="wolf-portfolio-card" data-overview-port="${p.id}" style="--port-color:${p.color||'#18d391'}"><span class="wolf-port-emoji">${p.emoji||'📁'}</span><span class="wolf-port-copy"><b>${this.escapeHtml(p.name)}</b><strong>${value.main}</strong><small class="${perf.profit>=0?'text-emerald':'text-rose'}">${perf.profit>=0?'กำไร':'ขาดทุน'}จริง ${this.formatDual(Math.abs(perf.profit)).main}</small><span class="portfolio-progress-head"><small>${progressLabel}</small><small>${pct==null?'—':Math.round(pct)+'%'}</small></span><span class="portfolio-progress-bar" role="progressbar" aria-label="ความคืบหน้าเป้าหมายของ ${this.escapeHtml(p.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct??0}"><span style="width:${pct??0}%"></span></span></span></button>`;}).join('');
-    container.innerHTML=`<section class="dime-hero-banner"><div class="dime-hero-label">มูลค่าพอร์ตลงทุน</div><div class="dime-main-value">${dual.main}</div><div class="dime-sub-value">${dual.sub}</div><p class="market-caption">${this.escapeHtml(this.marketStatus||'ใช้ราคาที่บันทึกไว้ กำลังรอข้อมูลจากบริการราคา')}</p></section>
-    <div class="wolf-gauge-grid">${this.gaugeHTML(strength.score,'ความแข็งแกร่งทางการเงิน',`สินทรัพย์ ${this.formatDual(strength.assetsUSD).main} · หนี้ ${this.formatDual(strength.liabilitiesUSD).main}`,'#18d391')}${this.gaugeHTML(health.score,'สุขภาพพอร์ตลงทุน',`กระจายความเสี่ยง ${Math.round(health.diversification)} · คุณภาพข้อมูล ${Math.round(health.dataQuality)}`,'#5b8cff')}</div>
-    <details class="score-method"><summary>คะแนนคำนวณอย่างไร</summary><p><b>ความแข็งแกร่งทางการเงิน:</b> สัดส่วนหนี้ 30% · สภาพคล่องเทียบภาระรายเดือน 25% · มูลค่าสุทธิ 25% · ความหลากหลายประเภทสินทรัพย์ 10% · แนวโน้มไตรมาส 10%</p><p><b>สุขภาพพอร์ต:</b> การกระจาย 35% · ไม่กระจุกตัว 25% · ความสด/ครบของราคา 20% · ความคืบหน้าเป้าหมาย 20%</p><p>การซื้อหรือขายไม่บวกคะแนนตามจำนวนครั้ง ผลของรายการสะท้อนผ่านสัดส่วนพอร์ตและกำไรจริง ปันผลรวมในผลตอบแทนรวม ส่วนหนี้สินมีผลเฉพาะความมั่งคั่งและเกจการเงิน</p></details>
-    <section class="lifetime-result ${life.profit>=0?'positive':'negative'}"><span>ตั้งแต่เริ่มลงทุนมา คุณ${life.profit>=0?'กำไร':'ขาดทุน'}จริง</span><strong>${this.formatDual(Math.abs(life.profit)).main}</strong><div><small>ยังไม่ขาย ${this.formatDual(life.unrealized).main}</small><small>ขายแล้ว ${this.formatDual(life.realized).main}</small><small>ปันผล ${this.formatDual(life.dividends).main}</small><small>ค่าธรรมเนียมที่บันทึก ${this.formatDual(life.fees).main}</small></div><p>กำไรจริง = กำไร/ขาดทุนที่ยังถือ + ผลขายที่บันทึกไว้ + ปันผลสุทธิ ค่าธรรมเนียมรวมอยู่ในต้นทุนและผลขายแล้ว</p></section>
-    <div class="overview-metrics"><section><span>ความมั่งคั่งสุทธิ</span><strong class="${strength.netWorthUSD>=0?'text-emerald':'text-rose'}">${this.formatDual(strength.netWorthUSD).main}</strong><small>รวมสินทรัพย์อื่นและหักหนี้สิน</small></section><section><span>เงินสดในพอร์ต</span><strong>${this.formatDual(grand.totalCashBufferUSD).main}</strong><small>${this.portfolios.length} พอร์ต · ${this.portfolios.reduce((n,p)=>n+(p.holdings||[]).length,0)} สินทรัพย์ลงทุน</small></section></div>
-    <section class="overview-section"><div class="section-header"><h3>พอร์ตของคุณ</h3><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div><div class="wolf-portfolio-grid">${cards||'<p>เริ่มจากเพิ่มพอร์ต แล้วกรอกสินทรัพย์ที่ถืออยู่จริง</p>'}</div></section>`;
-    container.querySelectorAll('[data-overview-port]').forEach(b=>b.addEventListener('click',()=>{this.selectedPortfolioId=b.dataset.overviewPort;this.switchTab('portfolios');}));
-  },
   openCashBufferModal(id) {
     if(!id.startsWith('trading:'))return originalCashModal.call(this,id);
     const item=this.tradingData[id.slice(8)];if(!item)return;

@@ -1,4 +1,4 @@
-/* Readable mobile presentation without removing the existing feature views. */
+/* Shared presentation; desktop is the primary workspace. */
 :root { --font-ui:'Kanit',system-ui,sans-serif; --font-mono:'Kanit',system-ui,sans-serif; --color-purple:#60a5fa; --radius-xl:20px; }
 body { font-size:16px; touch-action:auto; }
 body { background:#0b1220; }
@@ -91,3 +91,42 @@ body::before{content:"";position:fixed;inset:0;background:linear-gradient(rgba(5
 .trade-execution-panel,.trade-fees-panel{padding:14px;border:1px solid #334155;border-radius:14px;background:rgba(15,23,42,.6)}.trade-fees-panel details>summary{cursor:pointer;color:#fbbf24;font-weight:600}.trade-fees-panel .form-row{margin-top:12px}
 #modal-trading-port-edit .modal-card{max-width:620px;border:1px solid rgba(245,158,11,.35);box-shadow:0 28px 80px rgba(0,0,0,.65),0 0 45px rgba(245,158,11,.08)}#modal-trading-port-edit .modal-header{background:linear-gradient(135deg,rgba(245,158,11,.16),rgba(15,23,42,.2))}#modal-trading-port-edit .modal-body{background:linear-gradient(180deg,rgba(245,158,11,.035),transparent)}
 @media(max-width:768px){.main-content::before{inset:0;opacity:.045}.portfolio-card-main{grid-template-columns:48px minmax(0,1fr);padding:14px;gap:10px}.wolf-port-copy strong{font-size:20px}.debt-history-item{grid-template-columns:1fr}.debt-history-item>strong{text-align:left}.debt-history-actions{justify-content:flex-start}.trade-execution-panel,.trade-fees-panel{padding:12px}}
+/* Set 1: investment workspace, designed for desktop browsers. */
+:root{--color-emerald:#22c58b;--color-rose:#f05b67;--color-red:#f05b67;--bg-app:#0b1018;--bg-surface:#101824;--bg-card:#141e2b;--radius-xl:16px;--text-secondary:#a7b4c7}
+body{background:var(--bg-app);line-height:1.65;font-size:15px}
+body::before,.main-content::before{display:none!important}
+.main-content{background:var(--bg-app)}
+#app-view-container{padding:28px 32px 40px;max-width:1600px;margin:0 auto;width:100%}
+.overview-section{margin-top:24px}
+.overview-section h2,.overview-section h3,.benchmark-card h2,.benchmark-card h3{line-height:1.45;letter-spacing:0;font-weight:600}
+.section-header{gap:20px;align-items:center;margin-bottom:18px}
+.market-caption{font-size:13px;line-height:1.7;margin:10px 0 0;color:var(--text-secondary)}
+.dime-hero-banner,.wealth-hero{padding:26px 28px!important;border-radius:16px!important;background:#141e2b!important;border:1px solid #2b3748!important;box-shadow:none!important}
+.dime-main-value,.wealth-hero strong{font-size:clamp(32px,3.2vw,44px)!important;line-height:1.25!important;margin:10px 0!important;letter-spacing:-.025em}
+.dime-sub-value{font-size:16px!important;color:#a7b4c7!important}
+.lifetime-result{margin:20px 0;padding:24px 28px;border-radius:16px;background:#141e2b;box-shadow:none}
+.lifetime-result>strong{font-size:32px;line-height:1.35;margin:8px 0 14px;font-variant-numeric:tabular-nums}
+.lifetime-result.positive>strong{color:var(--color-emerald)}
+.lifetime-result.negative>strong{color:var(--color-rose)}
+.lifetime-result>div{gap:12px 28px}.lifetime-result small{font-size:14px}
+.overview-metrics{gap:20px}.overview-metrics section{padding:22px 26px;background:#141e2b;border-radius:14px;border-color:#2b3748}
+.overview-metrics strong{font-variant-numeric:tabular-nums;font-size:26px;margin:8px 0;line-height:1.4}
+.wolf-portfolio-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.wolf-portfolio-card{background:#141e2b;border:1px solid #2b3748;border-radius:16px;box-shadow:none;transition:border-color .15s}
+.wolf-portfolio-card:hover{transform:none;border-color:#527296}
+.portfolio-card-main{padding:20px 22px;gap:16px;grid-template-columns:48px minmax(0,1fr)}
+.wolf-port-emoji{width:48px;height:48px;font-size:24px;border-radius:12px}
+.wolf-port-copy b{font-size:17px;line-height:1.5}.wolf-port-copy strong{font-size:26px;line-height:1.4;margin:8px 0}
+.wolf-port-copy small{font-size:13px;line-height:1.6;margin-top:6px}
+.portfolio-order-tools{padding:10px 12px 0;gap:6px}.portfolio-order-tools button{width:30px;height:30px;min-height:30px;background:#111a27;box-shadow:none}
+.portfolio-progress-head{margin-top:16px}.portfolio-progress-bar{height:6px;margin-top:8px}.portfolio-progress-bar>span{box-shadow:none;background:var(--port-color)}
+.benchmark-card{padding:24px 28px;border:1px solid #2b3748;border-radius:16px;background:#141e2b;box-shadow:none}
+.benchmark-card p{max-width:1000px;font-size:14px;line-height:1.75}
+canvas{max-width:100%}
+.wealth-row{padding:18px 22px;background:#141e2b;border-color:#2b3748;border-radius:12px;line-height:1.6}
+.custom-table th{font-weight:500;color:#a7b4c7;background:#111a27}.custom-table td,.custom-table th{padding:16px 18px;line-height:1.6}
+.btn{box-shadow:none!important;letter-spacing:0}.btn-primary{background:#158463!important}.btn-primary:hover{background:#1b9873!important}
+.app-header{background:#101824!important;border-bottom:1px solid #263244;box-shadow:none!important}
+@media(min-width:769px){.app-header{padding:16px 24px!important;min-height:88px;height:auto!important;gap:20px}.header-left{flex:0 1 300px;min-width:160px}.header-right{flex-wrap:wrap;justify-content:flex-end;gap:10px!important}.header-right button{white-space:nowrap}.page-title{line-height:1.4}}
+@media(min-width:769px) and (max-width:1200px){.wolf-portfolio-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:768px){#app-view-container{padding:18px 16px 28px}.wolf-portfolio-grid{grid-template-columns:1fr}.dime-hero-banner,.wealth-hero,.lifetime-result,.benchmark-card{padding:20px!important}.overview-metrics{gap:14px}}
