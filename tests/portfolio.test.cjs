@@ -18,16 +18,65 @@ function runtime(){
   vm.runInContext(fs.readFileSync(path.join(root,'app.js'),'utf8')+'\nthis.App=PixelStewardApp;',sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app-data.js'),'utf8'),sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app-features.js'),'utf8'),sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root,'app-market.js'),'utf8'),sandbox);
   const app=Object.assign(Object.create(sandbox.App.prototype),core.empty(),{cloudReady:true,isFirebaseOnline:true,revision:0,generation:'g',charts:{},displayCurrency:'USD'});
   for(const name of ['renderActiveTab','renderSpecCountersBar','setCloudStatus','updateSidebarFxRate'])app[name]=()=>{};
   app.showToast=value=>notices.push(value);
   return {app,fields,notices,sandbox};
 }
+test('daily movers rank monetary impact, combine tickers and limit each side to five',()=>{
+  const holdings=[{ticker:'BIG',shares:100,currentPriceUSD:110,change1dPct:10},{ticker:'SMALL',shares:1,currentPriceUSD:150,change1dPct:50},...Array.from({length:6},(_,i)=>({ticker:'LOSS'+i,shares:10+i,currentPriceUSD:90,change1dPct:-10})),{ticker:'UNKNOWN',shares:100,currentPriceUSD:100},{ticker:'BTC',shares:1,currentPriceUSD:50000,change1dPct:10}];
+  const data={...core.empty(),portfolios:[{id:'a',name:'A',holdings},{id:'b',name:'B',holdings:[{ticker:'BIG',shares:10,currentPriceUSD:110,change1dPct:10}]}]};
+  const result=core.dailyMovers(data);
+  assert.equal(result.winners[0].ticker,'BIG');assert.ok(Math.abs(result.winners[0].profitUSD-1100)<1e-8);
+  assert.equal(result.winners[0].portfolios.length,2);assert.equal(result.winners[1].ticker,'SMALL');
+  assert.equal(result.losers.length,5);assert.equal(result.losers[0].ticker,'LOSS5');assert.equal(result.missing,1);
+  assert.ok(![...result.winners,...result.losers].some(r=>r.ticker==='BTC'||r.ticker==='UNKNOWN'));
+});
+test('daily movers use native THB quotes and reject invalid daily percentages',()=>{
+  const data={...core.empty(),exchangeRate:32,portfolios:[{id:'p',name:'P',holdings:[{ticker:'PTT.BK',currency:'THB',shares:100,currentPriceNative:35.2,currentPriceUSD:99,change1dPct:10},{ticker:'BAD',shares:1,currentPriceUSD:50,change1dPct:-100}]}]};
+  const result=core.dailyMovers(data);assert.ok(Math.abs(result.winners[0].profitUSD-10)<1e-8);assert.equal(result.missing,1);
+});
 test('Bangkok boundaries and exact quarter end days',()=>{
   assert.equal(core.bangkokDate('2026-09-30T16:59:59Z'),'2026-09-30');
   assert.equal(core.quarterEnd('2026-09-30T17:00:00Z'),null);
   assert.equal(core.quarterEnd('2026-09-30T16:00:00Z').quarter,'Q3');
   assert.equal(core.quarterEnd('2026-09-09T00:00:00Z'),null);
+});
+test('price alerts trigger once on entry, rearm on exit and never write Cloud',()=>{
+  const {app,notices,sandbox}=runtime();app.dbRef={transaction:()=>{throw Error('Quote wrote Cloud');}};
+  sandbox.document.visibilityState='hidden'; // An open background tab may still receive prices.
+  app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',shares:2,currentPriceUSD:100,dipTarget1:90,sellTargetUSD:110,stopLossUSD:80}]}];
+  const update=price=>app.applyMarketUpdates({MSFT:{priceUSD:price,change1dPct:0,source:'Test'}});
+  update(90);update(89);assert.equal(notices.length,1);assert.equal(app.priceAlertHistory.length,1);
+  update(100);update(90);assert.equal(notices.length,2);
+  update(110);assert.ok(notices.at(-1).title.includes('ขายทำกำไร'));
+  update(79);assert.ok(notices.at(-1).title.includes('ขายจำกัดขาดทุน'));
+  assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,79);
+});
+test('stream trades use fresh previous close and reject older price updates',()=>{
+  const {app}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',shares:1,currentPriceUSD:100,change1dPct:0}]}];
+  const now=Date.now();app.applyMarketUpdates({MSFT:{priceUSD:100,change1dPct:0,previousCloseUSD:100,referenceAt:new Date(now).toISOString(),marketAt:new Date(now-5000).toISOString(),source:'Test'}});
+  app.receiveMarketTrades([{s:'MSFT',p:110,t:now},{s:'MSFT',p:105,t:now-1000}]);
+  assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,110);assert.ok(Math.abs(app.portfolios[0].holdings[0].change1dPct-10)<1e-8);
+  app.applyMarketUpdates({MSFT:{priceUSD:80,marketAt:new Date(now-2000).toISOString(),source:'Old'}});
+  assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,110);
+  app.marketQuotes.MSFT.referenceAt=new Date(now-100000).toISOString();app.receiveMarketTrades([{s:'MSFT',p:120,t:now+1}]);
+  assert.equal(app.portfolios[0].holdings[0].change1dPct,null);
+});
+test('live quotes do not replace an open form baseline and native THB remains fixed',()=>{
+  const {app}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'PTT.BK',shares:100,currency:'THB',currentPriceNative:320,currentPriceUSD:10}]}];app.exchangeRate=32;app.viewDirty=true;
+  app.applyMarketUpdates({'PTT.BK':{priceUSD:11,change1dPct:10,source:'Test'}});
+  assert.equal(app.portfolios[0].holdings[0].currentPriceNative,320);
+  app.viewDirty=false;app.exchangeRate=33;app.mergeMarketQuotes();assert.equal(app.portfolios[0].holdings[0].currentPriceNative,352);
+});
+test('stream subscribes only to held US tickers and closes at disconnect',()=>{
+  const {app,sandbox}=runtime();let socket;
+  sandbox.WebSocket=class{constructor(url){this.url=url;this.messages=[];socket=this;}send(data){this.messages.push(JSON.parse(data));}close(){this.closed=true;}};
+  app.finnhubApiKey='test-key';app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',shares:1},{id:'b',ticker:'PTT.BK',shares:1},{id:'c',ticker:'BTC',shares:1}]}];
+  app.ensureMarketStream();socket.onopen();assert.deepEqual(JSON.parse(JSON.stringify(socket.messages)),[{type:'subscribe',symbol:'MSFT'}]);
+  socket.onmessage({data:JSON.stringify({type:'trade',data:[{s:'MSFT',p:123,t:Date.now()}]})});assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,123);
+  app.stopMarketStream();assert.equal(socket.closed,true);assert.equal(app.marketSocket,null);
 });
 test('last successful same-day visit replaces one snapshot, older and next-day do not',()=>{
   const s={year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-09-30T10:00:00Z',totalUSD:100};

@@ -33,8 +33,8 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
   
   <!-- Main Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=5.3.0">
-  <link rel="stylesheet" href="mobile.css?v=5.3.0">
+  <link rel="stylesheet" href="style.css?v=5.3.1">
+  <link rel="stylesheet" href="mobile.css?v=5.3.1">
 </head>
 <body>
   <div class="app-layout">
@@ -393,6 +393,11 @@
           </div>
         </div>
 
+        <div class="form-row">
+          <div class="form-group flex-1"><label for="holding-sell-target">Alert ขายทำกำไร เมื่อราคา ≥ (USD)</label><input id="holding-sell-target" type="number" min="0.000001" step="any" class="form-input" placeholder="ไม่ตั้งให้เว้นว่าง"></div>
+          <div class="form-group flex-1"><label for="holding-stop-loss">Alert ขายจำกัดขาดทุน เมื่อราคา ≤ (USD)</label><input id="holding-stop-loss" type="number" min="0.000001" step="any" class="form-input" placeholder="ไม่ตั้งให้เว้นว่าง"></div>
+        </div>
+        <p class="market-caption">แจ้งเตือนในเว็บเมื่อได้รับราคาถึงจุดซื้อ/ขาย ไม่ส่งคำสั่งซื้อขายให้อัตโนมัติ</p>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-close="modal-holding">ยกเลิก</button>
           <button type="button" id="btn-delete-holding" class="btn btn-danger hidden">ลบสินทรัพย์</button>
@@ -994,10 +999,11 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Core JavaScript Application -->
-  <script src="portfolio-core.js?v=5.3.0"></script>
-  <script src="cloud-store.js?v=5.3.0"></script>
-  <script src="app.js?v=5.3.0"></script>
-  <script src="app-data.js?v=5.3.0"></script>
-  <script src="app-features.js?v=5.3.0"></script>
+  <script src="portfolio-core.js?v=5.3.1"></script>
+  <script src="cloud-store.js?v=5.3.1"></script>
+  <script src="app.js?v=5.3.1"></script>
+  <script src="app-data.js?v=5.3.1"></script>
+  <script src="app-features.js?v=5.3.1"></script>
+  <script src="app-market.js?v=5.3.1"></script>
 </body>
 </html>

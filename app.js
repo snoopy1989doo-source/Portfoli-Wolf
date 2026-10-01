@@ -4275,6 +4275,7 @@ class PixelStewardApp {
       const key = (document.getElementById('input-finnhub-key')?.value || '').trim();
       this.finnhubApiKey = key;
       localStorage.setItem('pixel_finnhub_key', key);
+      this.stopMarketStream?.();this.ensureMarketStream?.();
       this.showToast({
         icon: '🔑',
         title: 'บันทึก Finnhub API Key แล้ว!',

@@ -13,7 +13,7 @@ Object.assign(PixelStewardApp.prototype, {
     this.initFirebase();
     if('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(registrations=>registrations.filter(r=>r.scope===new URL('./',location.href).href).forEach(r=>r.update())).catch(()=>{});
     setInterval(() => {
-      if (document.visibilityState === 'visible' && this.cloudReady && this.isFirebaseOnline) this.syncLiveMarketPrices();
+      if (this.cloudReady && this.isFirebaseOnline) this.syncLiveMarketPrices();
     }, 60000);
   },
   loadLocalData() {
@@ -40,6 +40,7 @@ Object.assign(PixelStewardApp.prototype, {
     } catch(error) { this.handleAuthError(error); }
   },
   disconnectCloud() {
+    this.stopMarketStream?.();this.marketQuotes={};
     this.connectionRef?.off();
     this.dbRef?.off();
     this.connectionRef=null;this.dbRef=null;this.cloudStore=null;
@@ -313,6 +314,8 @@ Object.assign(PixelStewardApp.prototype, {
     originalHoldingModal.call(this,id,resolvedPortId);
     const h=this.portfolios.find(p=>p.id===resolvedPortId)?.holdings?.find(h=>h.id===id);
     document.getElementById('holding-dividend-yield').value=h?.dividendYield??'';
+    document.getElementById('holding-sell-target').value=h?.sellTargetUSD??'';
+    document.getElementById('holding-stop-loss').value=h?.stopLossUSD??'';
   },
   saveHoldingForm() {
     const get=id=>document.getElementById(id)?.value;
@@ -327,6 +330,9 @@ Object.assign(PixelStewardApp.prototype, {
       assetType:'market',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
     for(let i=1;i<=3;i++)h['dipTarget'+i]=Number(get('holding-dip-target-'+i))||null;
     h.dipTargetUSD=h.dipTarget1;
+    for(const [field,input]of [['sellTargetUSD','holding-sell-target'],['stopLossUSD','holding-stop-loss']]){
+      const raw=get(input);if(raw!==undefined&&raw!==null&&raw!==''){const target=Number(raw);if(!Number.isFinite(target)||target<=0)return alert('จุดแจ้งเตือนต้องเป็นราคามากกว่าศูนย์');h[field]=target;}else h[field]=null;
+    }
     this.portfolios.forEach(p=>p.holdings=(p.holdings||[]).filter(x=>x.id!==h.id));port.holdings.push(h);
     // Holdings are a current-state correction, not an inferred deposit or profit.
     if(this.quarterlySnapshots.length)this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:'ADJUSTMENT',date:PortfolioCore.bangkokDate(),at:new Date().toISOString(),amountUSD:0,amountTHB:0,note:'แก้ holdings ปัจจุบัน: '+ticker});
@@ -390,6 +396,7 @@ Object.assign(PixelStewardApp.prototype, {
   },
   resetCurrentYearQuarterlySnapshots() {this.showToast({title:'เก็บประวัติจริงไว้เพื่อเทียบการเติบโต',type:'info'});},
   async syncLiveMarketPrices(options={}) {
+    this.ensureMarketStream?.();
     const manual=options===true||options?.manual===true;
     const blocked=!this.cloudReady||!this.isFirebaseOnline?'กรุณารอให้เชื่อมต่อ Cloud และโหลดข้อมูลล่าสุดก่อน':this.marketSyncing?'กำลังดึงราคาอยู่':this.saving?'กำลังบันทึกข้อมูล กรุณารอสักครู่':this.viewDirty?'มีแบบฟอร์มที่ยังบันทึกไม่เสร็จ':document.querySelector('.modal-backdrop.open')?'กรุณาปิดแบบฟอร์มก่อนอัปเดตราคา':'';
     if(blocked){if(manual)this.showToast({title:'ยัง Sync Market ไม่ได้',message:blocked,type:'info'});return false;}
@@ -406,7 +413,9 @@ Object.assign(PixelStewardApp.prototype, {
       await Promise.allSettled([this.fetchCryptoPrices(crypto,updates),this.fetchThaiStockPrices(thai,updates),this.fetchBatchStockPrices(us,updates)]);
       if(revision!==this.revision || this.viewDirty || this.saving || document.querySelector('.modal-backdrop.open')){if(manual)this.showToast({title:'ยกเลิกการอัปเดตราคา',message:'ข้อมูลมีการเปลี่ยนแปลงระหว่างดึงราคา กรุณากด Sync Market อีกครั้ง',type:'info'});return false;}
       const receivedAt=new Date().toISOString();
-      for(const p of this.portfolios)for(const h of p.holdings||[]){const u=updates[h.ticker?.trim().toUpperCase()];if(u && h.assetType!=='manual'){h.currentPriceUSD=u.priceUSD;if(h.currency==='THB')h.currentPriceNative=u.priceUSD*this.exchangeRate;h.change1dPct=u.change1dPct;h.priceReceivedAt=receivedAt;h.priceMarketAt=u.marketAt||null;h.priceSource=u.source|| (h.ticker.endsWith('.BK')?'Yahoo SET (ล่าช้า)':'Crypto API');}}
+      for(const u of Object.values(updates)){if(Number.isFinite(u.change1dPct)&&u.change1dPct>-100)u.previousCloseUSD=u.priceUSD/(1+u.change1dPct/100);u.referenceAt=receivedAt;}
+      if(this.applyMarketUpdates)this.applyMarketUpdates(updates);
+      else for(const p of this.portfolios)for(const h of p.holdings||[]){const u=updates[h.ticker?.trim().toUpperCase()];if(u && h.assetType!=='manual'){h.currentPriceUSD=u.priceUSD;if(h.currency==='THB')h.currentPriceNative=u.priceUSD*this.exchangeRate;h.change1dPct=u.change1dPct;h.priceReceivedAt=receivedAt;h.priceMarketAt=u.marketAt||null;h.priceSource=u.source|| (h.ticker.endsWith('.BK')?'Yahoo SET (ล่าช้า)':'Crypto API');}}
       this.marketStatus=`รับราคา ${Object.keys(updates).length}/${us.length+thai.length+crypto.length} ตัว • ${new Date().toLocaleTimeString('th-TH')} (เวลารับข้อมูล ไม่ใช่เวลาซื้อขาย)`;
       // Market refresh NEVER writes holdings to the shared database.
       this.updateSidebarFxRate();this.renderSpecCountersBar();this.renderActiveTab();

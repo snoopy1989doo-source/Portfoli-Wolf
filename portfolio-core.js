@@ -183,6 +183,31 @@
     const trend=snapshots.length>1&&snapshots[0].totalUSD>0?clamp(50+(snapshots[snapshots.length-1].totalUSD/snapshots[0].totalUSD-1)*100):50;
     return {score:Math.round(debt*.3+liquidity*.25+netWorth*.25+allocation*.1+trend*.1),debt,liquidity,netWorth,allocation,trend,...w};
   }
-  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, commit, period, projection, upsertSnapshot,
+  function dailyMovers(data) {
+    const grouped=new Map();
+    const excluded=new Set(['BTC','ETH','BNB','SOL','XRP','DOGE','CASH','THB','USD','SSO','KEPT','กอช.']);
+    let missing=0;
+    for(const port of data.portfolios||[])for(const h of port.holdings||[]){
+      const ticker=String(h.ticker||'').trim().toUpperCase(),shares=Number(h.shares),pct=h.change1dPct;
+      if(!ticker||excluded.has(ticker)||h.assetType==='manual'||!(shares>0))continue;
+      const native=h.currency==='THB'&&Number.isFinite(h.currentPriceNative);
+      const price=native?h.currentPriceNative/data.exchangeRate:h.currentPriceUSD;
+      // Do not turn missing daily data into a zero return.
+      if(!Number.isFinite(price)||price<=0||!Number.isFinite(pct)||pct<=-100){missing++;continue;}
+      const profit=shares*(price-price/(1+pct/100));
+      const row=grouped.get(ticker)||{ticker,profitUSD:0,portfolios:[],receivedAt:null,marketAt:null};
+      row.profitUSD+=profit;
+      if(!row.portfolios.some(p=>p.id===port.id))row.portfolios.push({id:port.id,name:port.name});
+      // The oldest quote identifies the freshness of the complete aggregate.
+      row.receivedAt=row.portfolios.length===1?h.priceReceivedAt||null:row.receivedAt&&h.priceReceivedAt?[row.receivedAt,h.priceReceivedAt].sort()[0]:null;
+      row.marketAt=row.portfolios.length===1?h.priceMarketAt||null:row.marketAt&&h.priceMarketAt?[row.marketAt,h.priceMarketAt].sort()[0]:null;
+      grouped.set(ticker,row);
+    }
+    const rows=[...grouped.values()];
+    const winners=rows.filter(r=>r.profitUSD>1e-9).sort((a,b)=>b.profitUSD-a.profitUSD||a.ticker.localeCompare(b.ticker)).slice(0,5);
+    const losers=rows.filter(r=>r.profitUSD<-1e-9).sort((a,b)=>a.profitUSD-b.profitUSD||a.ticker.localeCompare(b.ticker)).slice(0,5);
+    return {winners,losers,missing};
+  }
+  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, commit, period, projection, upsertSnapshot, dailyMovers,
     holdingValues, portfolioValue, lifetimePerformance, wealth, portfolioHealth, wealthStrength};
 });
