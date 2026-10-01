@@ -361,7 +361,7 @@ Object.assign(PixelStewardApp.prototype, {
         this.lastFinnhubRequest=Date.now();
         try{const r=await this.fetchWithTimeout(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${encodeURIComponent(this.finnhubApiKey)}`,4500);
           if(r.status===429)this.finnhubBackoffUntil=Date.now()+60000;
-          if(r.ok){const d=await r.json();if(d.c>0){updates[ticker]={priceUSD:d.c,change1dPct:d.dp||0,source:'Finnhub',marketAt:d.t?new Date(d.t*1000).toISOString():null};}}
+          if(r.ok){const d=await r.json();if(d.c>0){updates[ticker]={priceUSD:d.c,change1dPct:d.pc>0?(d.c/d.pc-1)*100:Number.isFinite(d.dp)?d.dp:null,source:'Finnhub',marketAt:d.t?new Date(d.t*1000).toISOString():null};}}
         }catch(error){}
       }
       const data=await this.fetchViaFastProxies(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`);
@@ -370,7 +370,7 @@ Object.assign(PixelStewardApp.prototype, {
       let last=closes.length-1;while(last>=0 && !(closes[last]>0))last--;
       const time=last>=0?result.timestamp?.[last]:meta?.regularMarketTime;
       const price=last>=0?closes[last]:meta?.regularMarketPrice;
-      if(price>0 && (!updates[ticker] || time*1000>Date.parse(updates[ticker].marketAt||0)))updates[ticker]={priceUSD:price,change1dPct:meta?.chartPreviousClose>0?(price/meta.chartPreviousClose-1)*100:0,source:'Yahoo 1m (รวมช่วงนอกเวลาหากมีข้อมูล)',marketAt:time?new Date(time*1000).toISOString():null};
+      if(price>0 && (!updates[ticker] || time*1000>Date.parse(updates[ticker].marketAt||0)))updates[ticker]={priceUSD:price,change1dPct:meta?.chartPreviousClose>0?(price/meta.chartPreviousClose-1)*100:null,source:'Yahoo 1m (รวมช่วงนอกเวลาหากมีข้อมูล)',marketAt:time?new Date(time*1000).toISOString():null};
     }
   },
   checkAndAutoRecordQuarterlySnapshots() { /* Called only after a completed market refresh below. */ },
