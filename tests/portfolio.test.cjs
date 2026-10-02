@@ -57,6 +57,14 @@ test('trade validation rejects impossible dates, missing execution data, negativ
   for(const [id,bad]of [['trade-executed-date','2026-02-30'],['trade-executed-date',''],['trade-executed-time','24:01'],['trade-executed-date','2099-01-01'],['trade-shares','2'],['trade-shares',''],['trade-price','20xyz'],['trade-commission-usd','-1'],['trade-commission-usd','11']]){fields[id].value=bad;await app.executeTrade();fields[id].value=values[id];assert.equal(saves,0);assert.deepEqual(app.dataPayload(),before);}
   app.closeModal=()=>{};await app.executeTrade();assert.equal(saves,1);assert.equal(app.tradingHistory[0].date,'2026-01-01T05:30:15.000Z');assert.equal(app.tradingHistory[0].assetName,'Test asset');
 });
+test('trade entry cannot replay a transaction before the opening balance or latest recorded trade',async()=>{
+  const {app,fields,sandbox}=runtime();app.portfolios=[{...p(100),holdings:[{id:'h',ticker:'MSFT',shares:2,avgCostUSD:20,currentPriceUSD:25,openingBalanceDate:'2026-01-02'}]}];
+  sandbox.document.querySelector=()=>({value:'BUY'});app.saveData=async()=>true;app.closeModal=()=>{};
+  for(const [id,value]of Object.entries({'trade-stock-select':'p:::h','trade-shares':'1','trade-price':'30','trade-executed-date':'2026-01-01','trade-executed-time':'12:00','trade-fee-usd':'0'}))fields[id]={value};fields['trade-use-cash-buffer']={checked:true};
+  const before=copy(app.dataPayload());await app.executeTrade();assert.deepEqual(app.dataPayload(),before);
+  fields['trade-executed-date'].value='2026-01-03';await app.executeTrade();assert.equal(app.tradingHistory.length,1);
+  fields['trade-executed-date'].value='2026-01-02';await app.executeTrade();assert.equal(app.tradingHistory.length,1);
+});
 
 test('asset ledger presents cost, market value, allocation including cash, profit and escaped asset names in both layouts',()=>{
   const {app}=runtime();app.renderStockLogoHTML=()=>'';const port={...p(100),holdings:[{id:'h',ticker:'TEST',name:'<script>unsafe</script>',shares:2,avgCostUSD:40,currentPriceUSD:50,change1dPct:null}]};

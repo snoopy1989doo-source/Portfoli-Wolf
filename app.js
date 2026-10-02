@@ -5118,6 +5118,9 @@ class PixelStewardApp {
     }
     const executedAt=PortfolioCore.executionTime(tradeDate,tradeTime);
     if(!executedAt||Date.parse(executedAt)>Date.now())return this.entryError('form-trade','trade-executed-date','กรอกวันที่และเวลาซื้อขายที่เกิดขึ้นจริง (เวลาไทย) ไม่ใช้วันเวลาในอนาคต');
+    if(h.openingBalanceDate&&tradeDate<h.openingBalanceDate)return this.entryError('form-trade','trade-executed-date',`ยอดถือครองนี้เริ่มบันทึก ${h.openingBalanceDate} รายการก่อนวันนั้นจะถูกนับซ้ำกับยอดตั้งต้น`);
+    const latestTrade=(this.tradingHistory||[]).filter(item=>item.portfolioId===port.id&&item.ticker===h.ticker&&!item.manualResult).map(item=>Date.parse(item.date)).filter(Number.isFinite).reduce((latest,at)=>Math.max(latest,at),-Infinity);
+    if(Number.isFinite(latestTrade)&&Date.parse(executedAt)<latestTrade)return this.entryError('form-trade','trade-executed-date','กรุณาบันทึกรายการตามลำดับเวลาซื้อขาย เพราะต้นทุนหลังรายการล่าสุดถูกคำนวณไปแล้ว');
     if(!['BUY','SELL'].includes(type))return this.entryError('form-trade','trade-stock-select','เลือกประเภทรายการซื้อหรือขาย');
 
     const tradeTotalUSD = tradeShares * tradePrice;

@@ -334,6 +334,7 @@ Object.assign(PixelStewardApp.prototype, {
     if(Number.isNaN(change))return fail('holding-1d-change','เปอร์เซ็นต์รายวันต้องไม่ต่ำกว่า -100 หรือเว้นว่างหากไม่ทราบ');
     if(Number.isNaN(yieldPct))return fail('holding-dividend-yield','อัตราปันผลต้องเป็นตัวเลขตั้งแต่ศูนย์ หรือเว้นว่าง');
     const h={...original,id:id||crypto.randomUUID(),ticker,name,shares,currency:'USD',
+      openingBalanceDate:original?original.openingBalanceDate||null:PortfolioCore.bangkokDate(),
       avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:change,
       assetType:'market',dividendYield:yieldPct,priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
     for(let i=1;i<=3;i++){const value=PortfolioCore.inputNumber(get('holding-dip-target-'+i),{optional:true,exclusive:true});if(Number.isNaN(value))return fail('holding-dip-target-'+i,'ราคาแจ้งเตือนต้องมากกว่าศูนย์ หรือเว้นว่าง');h['dipTarget'+i]=value;}
