@@ -321,22 +321,30 @@ Object.assign(PixelStewardApp.prototype, {
     const get=id=>document.getElementById(id)?.value;
     const port=this.portfolios.find(p=>p.id===get('holding-portfolio-id'));if(!port)return;
     const id=get('holding-id');const ticker=(get('holding-ticker')||'').trim().toUpperCase();
-    const shares=Number(get('holding-shares')),cost=Number(get('holding-avg-cost')),price=Number(get('holding-current-price'));
-    if(!/^[\p{L}\p{N}._^=-]{1,30}$/u.test(ticker) || ![shares,cost,price].every(n=>Number.isFinite(n)&&n>=0)){alert('กรอกสัญลักษณ์ จำนวน ต้นทุนและราคาเป็นตัวเลขตั้งแต่ศูนย์');return;}
-    if(port.holdings.some(h=>h.ticker.toUpperCase()===ticker&&h.id!==id)){alert('มีสินทรัพย์นี้ในพอร์ตแล้ว กรุณาแก้รายการเดิม');return;}
-    const original=this.portfolios.flatMap(p=>p.holdings||[]).find(h=>h.id===id);
-    const h={...original,id:id||crypto.randomUUID(),ticker,name:get('holding-name')||ticker,shares,currency:'USD',
-      avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:Number(get('holding-1d-change'))||0,
-      assetType:'market',dividendYield:Math.max(0,Number(get('holding-dividend-yield'))||0),priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
-    for(let i=1;i<=3;i++)h['dipTarget'+i]=Number(get('holding-dip-target-'+i))||null;
+    const fail=(field,message)=>this.entryError('form-holding',field,message);
+    if(!/^[\p{L}\p{N}._^=-]{1,30}$/u.test(ticker))return fail('holding-ticker','กรอก Ticker ให้ถูกต้อง เช่น MSFT');
+    const name=(get('holding-name')||'').trim();if(!name||name.length>120)return fail('holding-name','กรอกชื่อสินทรัพย์ 1–120 ตัวอักษร');
+    const shares=PortfolioCore.inputNumber(get('holding-shares')),cost=PortfolioCore.inputNumber(get('holding-avg-cost')),price=PortfolioCore.inputNumber(get('holding-current-price'));
+    for(const [field,value,label]of [['holding-shares',shares,'จำนวนหุ้น'],['holding-avg-cost',cost,'ต้นทุนต่อหุ้น'],['holding-current-price',price,'ราคา']])if(!Number.isFinite(value))return fail(field,`กรอก${label}เป็นตัวเลขตั้งแต่ศูนย์ โดยใช้จุดทศนิยม`);
+    if(!Number.isFinite(shares*cost)||!Number.isFinite(shares*price))return fail('holding-shares','ยอดรวมสูงเกินช่วงที่คำนวณได้');
+    if(port.holdings.some(h=>h.ticker.trim().toUpperCase()===ticker&&h.id!==id))return fail('holding-ticker','มีสินทรัพย์นี้ในพอร์ตแล้ว กรุณาแก้รายการเดิมหรือบันทึกซื้อเพิ่ม');
+    const original=port.holdings.find(h=>h.id===id);
+    if(id&&!original)return fail('holding-ticker','ไม่พบสินทรัพย์เดิมในพอร์ต กรุณาเปิดฟอร์มใหม่');
+    const change=PortfolioCore.inputNumber(get('holding-1d-change'),{optional:true,min:-100}),yieldPct=PortfolioCore.inputNumber(get('holding-dividend-yield'),{optional:true});
+    if(Number.isNaN(change))return fail('holding-1d-change','เปอร์เซ็นต์รายวันต้องไม่ต่ำกว่า -100 หรือเว้นว่างหากไม่ทราบ');
+    if(Number.isNaN(yieldPct))return fail('holding-dividend-yield','อัตราปันผลต้องเป็นตัวเลขตั้งแต่ศูนย์ หรือเว้นว่าง');
+    const h={...original,id:id||crypto.randomUUID(),ticker,name,shares,currency:'USD',
+      avgCostNative:cost,currentPriceNative:price,avgCostUSD:cost,currentPriceUSD:price,change1dPct:change,
+      assetType:'market',dividendYield:yieldPct,priceSource:'กรอกเอง',priceReceivedAt:new Date().toISOString(),priceMarketAt:null};
+    for(let i=1;i<=3;i++){const value=PortfolioCore.inputNumber(get('holding-dip-target-'+i),{optional:true,exclusive:true});if(Number.isNaN(value))return fail('holding-dip-target-'+i,'ราคาแจ้งเตือนต้องมากกว่าศูนย์ หรือเว้นว่าง');h['dipTarget'+i]=value;}
     h.dipTargetUSD=h.dipTarget1;
     for(const [field,input]of [['sellTargetUSD','holding-sell-target'],['stopLossUSD','holding-stop-loss']]){
-      const raw=get(input);if(raw!==undefined&&raw!==null&&raw!==''){const target=Number(raw);if(!Number.isFinite(target)||target<=0)return alert('จุดแจ้งเตือนต้องเป็นราคามากกว่าศูนย์');h[field]=target;}else h[field]=null;
+      const target=PortfolioCore.inputNumber(get(input),{optional:true,exclusive:true});if(Number.isNaN(target))return fail(input,'ราคาแจ้งเตือนต้องมากกว่าศูนย์ หรือเว้นว่าง');h[field]=target;
     }
-    this.portfolios.forEach(p=>p.holdings=(p.holdings||[]).filter(x=>x.id!==h.id));port.holdings.push(h);
+    if(original)port.holdings[port.holdings.indexOf(original)]=h;else port.holdings.push(h);
     // Holdings are a current-state correction, not an inferred deposit or profit.
     if(this.quarterlySnapshots.length)this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:'ADJUSTMENT',date:PortfolioCore.bangkokDate(),at:new Date().toISOString(),amountUSD:0,amountTHB:0,note:'แก้ holdings ปัจจุบัน: '+ticker});
-    this.saveData().then(ok=>{if(ok){this.closeModal('modal-holding');this.renderActiveTab();}});
+    return this.saveData().then(ok=>{if(ok){this.closeModal('modal-holding');this.renderActiveTab();}return ok;});
   },
   calculateHoldingStats(h) {
     const shares=Number(h.shares)||0;
@@ -543,18 +551,18 @@ Object.assign(PixelStewardApp.prototype, {
     const trading=id.startsWith('trading:')?this.tradingData[id.slice(8)]:null;
     const p=this.portfolios.find(p=>p.id===id);if(!p&&!trading)return;
     const type=document.querySelector('input[name="cash-action"]:checked').value;
-    const amount=Number(document.getElementById('cash-amount-usd').value);
+    const amount=PortfolioCore.inputNumber(document.getElementById('cash-amount-usd').value);
     const date=document.getElementById('cash-flow-date').value;
     const rate=Number(document.getElementById('cash-flow-fx').value);
     if(!Number.isFinite(rate)||rate<=0){alert('ระบุอัตราแลกเปลี่ยนของรายการ');return;}
-    if(!date || date>PortfolioCore.bangkokDate() || !Number.isFinite(amount) || amount<0 || (type!=='SET'&&amount===0)){alert('ระบุวันที่ไม่เกินวันนี้และจำนวนเงินให้ถูกต้อง');return;}
+    if(!PortfolioCore.validDate(date) || date>PortfolioCore.bangkokDate() || !Number.isFinite(amount) || (type!=='SET'&&amount===0)){alert('ระบุวันที่ไม่เกินวันนี้และจำนวนเงินให้ถูกต้อง');return;}
     const prior=trading?this.getTradingLatestBalances().balances[id.slice(8)]||0:Number(p.cashBufferUSD)||0;
     if(type==='WITHDRAW'&&amount>prior){alert('ยอดถอนมากกว่าเงินสดคงเหลือ');return;}
     const balance=type==='SET'?amount:prior+(type==='DEPOSIT'?amount:-amount);
     if(p)p.cashBufferUSD=balance;
     else{const today=PortfolioCore.bangkokDate(),year=Number(today.slice(0,4)),month=Number(today.slice(5,7));const list=trading.monthlyBalances||=[];const row=list.find(m=>m.year===year&&m.month===month);if(row)row.balanceUSD=balance;else list.push({year,month,balanceUSD:balance,note:'เงินเข้า/ออก'});list.sort((a,b)=>a.year*12+a.month-b.year*12-b.month);}
     const at=date===PortfolioCore.bangkokDate()?new Date().toISOString():new Date(date+'T12:00:00+07:00').toISOString();
-    this.cashFlows.push({id:crypto.randomUUID(),portfolioId:id,type:type==='SET'?'ADJUSTMENT':type,at,date,
+    this.cashFlows.push({id:crypto.randomUUID(),portfolioId:id,type:type==='SET'?'ADJUSTMENT':type,at,date,source:'manual',balanceBeforeUSD:prior,balanceAfterUSD:balance,
       amountUSD:type==='SET'?amount-prior:amount,amountTHB:(type==='SET'?amount-prior:amount)*rate,exchangeRate:rate,
       note:document.getElementById('cash-note')?.value||'',fxSource:'อัตราที่ผู้ใช้ระบุในรายการ'});
     this.saveData().then(ok=>{if(ok){this.closeModal('modal-cash-buffer');this.renderActiveTab();}});

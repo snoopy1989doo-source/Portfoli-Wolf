@@ -6,7 +6,7 @@ const injection=`<script>PixelStewardApp.prototype.initFirebase=function(){let c
 http.createServer((req,res)=>{
   const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
   const name=pathname==='/'?'index.html':pathname.slice(1);
-  if(!['index.html','app.js','app-data.js','app-features.js','app-market.js','portfolio-core.js','cloud-store.js','style.css','mobile.css','manifest.json'].includes(name)&&!/^assets\/[\w/.-]+\.(png|svg|jpg)$/.test(name)){res.writeHead(404);res.end();return;}
+  if(!['index.html','app.js','app-data.js','app-features.js','app-market.js','app-assets.js','app-ledger.js','portfolio-core.js','cloud-store.js','style.css','mobile.css','manifest.json'].includes(name)&&!/^assets\/[\w/.-]+\.(png|svg|jpg)$/.test(name)){res.writeHead(404);res.end();return;}
   const filename=path.resolve(root,name);if(!filename.startsWith(path.resolve(root)+path.sep)){res.writeHead(403);res.end();return;}
   try{let data=fs.readFileSync(filename);if(name==='index.html')data=data.toString().replace(/<script[^>]*src="[^"]*firebase[^"]*"[^>]*><\/script>/g,'').replace('</body>',injection+'</body>');
     res.writeHead(200,{'Content-Type':name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"connect-src 'none'; worker-src 'none'"});res.end(data);

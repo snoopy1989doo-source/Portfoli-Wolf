@@ -17,6 +17,22 @@
     const index = ['03-31', '06-30', '09-30', '12-31'].indexOf(date.slice(5));
     return index < 0 ? null : { year: Number(date.slice(0, 4)), quarter: `Q${index + 1}`, date };
   }
+  function inputNumber(raw, {optional=false, min=0, exclusive=false}={}) {
+    const text=String(raw??'').trim();
+    if(!text)return optional?null:NaN;
+    if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(text))return NaN;
+    const value=Number(text);
+    return Number.isFinite(value)&&(exclusive?value>min:value>=min)?value:NaN;
+  }
+  function validDate(date) {
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date||''))return false;
+    const parsed=new Date(date+'T00:00:00Z');
+    return Number.isFinite(parsed.getTime())&&parsed.toISOString().slice(0,10)===date;
+  }
+  function executionTime(date,time) {
+    if(!validDate(date)||!/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(time||''))return null;
+    return new Date(`${date}T${time.length===5?time+':00':time}+07:00`).toISOString();
+  }
   function normalize(value) {
     const data = empty();
     if (!value || typeof value !== 'object') return data;
@@ -138,7 +154,7 @@
     }
     const trades=(data.tradingHistory||[]).filter(t=>(!portfolioId||t.portfolioId===portfolioId)&&t.type==='SELL');
     const realized=trades.reduce((sum,t)=>sum+(Number(t.realizedPLUSD)||0),0);
-    const soldCost=trades.reduce((sum,t)=>sum+Math.max(0,(Number(t.totalUSD)||0)-(Number(t.realizedPLUSD)||0)),0);
+    const soldCost=trades.reduce((sum,t)=>sum+Math.max(0,Number.isFinite(Number(t.costBasisUSD))&&t.costBasisUSD!==null?Number(t.costBasisUSD):(Number(t.totalUSD)||0)-(Number(t.feeUSD)||0)-(Number(t.realizedPLUSD)||0)),0);
     const dividends=(data.dividends||[]).filter(d=>!portfolioId||d.portfolioId===portfolioId).reduce((sum,d)=>sum+(Number(d.netUSD)||0),0);
     const fees=(data.tradingHistory||[]).filter(t=>!portfolioId||t.portfolioId===portfolioId).reduce((sum,t)=>sum+(Number(t.feeUSD)||0),0);
     // Trade results are stored net of their fee (and buy fees are included in cost basis).
@@ -147,6 +163,27 @@
     const measuredCapital=currentCost+soldCost;
     return {unrealized,realized,dividends,fees,profit,measuredCapital,returnPct:measuredCapital>0?profit/measuredCapital*100:null,
       complete:trades.every(t=>Number.isFinite(Number(t.realizedPLUSD)))};
+  }
+  function transactionTimeline(data,portfolioId=null){
+    const names=new Map((data.portfolios||[]).map(p=>[p.id,p.name]));
+    const trades=(data.tradingHistory||[]).filter(t=>!portfolioId||t.portfolioId===portfolioId).map(t=>({
+      kind:'trade',id:t.id,at:t.date,portfolioId:t.portfolioId,portfolioName:t.portfolioName||names.get(t.portfolioId)||t.portfolioId,
+      type:t.type,ticker:t.ticker,shares:Number(t.shares)||0,priceUSD:Number(t.priceUSD)||0,grossUSD:Number(t.totalUSD)||0,
+      feeUSD:Number(t.feeUSD)||0,netUSD:Number.isFinite(Number(t.netUSD))&&t.netUSD!==null?Number(t.netUSD):Math.max(0,(Number(t.totalUSD)||0)+(t.type==='BUY'?1:-1)*(Number(t.feeUSD)||0)),
+      realizedPLUSD:t.type==='SELL'&&Number.isFinite(Number(t.realizedPLUSD))?Number(t.realizedPLUSD):null,
+      costBasisUSD:t.type==='SELL'?(Number.isFinite(Number(t.costBasisUSD))&&t.costBasisUSD!==null?Number(t.costBasisUSD):Math.max(0,(Number(t.totalUSD)||0)-(Number(t.feeUSD)||0)-(Number(t.realizedPLUSD)||0))):null,
+      cashBeforeUSD:t.cashBeforeUSD,cashAfterUSD:t.cashAfterUSD,portfolioValueBeforeUSD:t.portfolioValueBeforeUSD,portfolioValueAfterUSD:t.portfolioValueAfterUSD,
+      sharesBefore:t.sharesBefore,sharesAfter:t.sharesAfter,note:t.note||'',manualResult:!!t.manualResult
+    }));
+    const flows=(data.cashFlows||[]).filter(f=>(!portfolioId||f.portfolioId===portfolioId)&&!f.linkedTradeId&&!String(f.note||'').startsWith('เงินภายนอกพอร์ตจากรายการ ')).map(f=>({
+      kind:'cash',id:f.id,at:f.at||f.date,portfolioId:f.portfolioId,portfolioName:names.get(f.portfolioId)||f.portfolioId,
+      type:f.type,amountUSD:Number(f.amountUSD)||0,cashBeforeUSD:f.balanceBeforeUSD,cashAfterUSD:f.balanceAfterUSD,note:f.note||''
+    }));
+    const dividends=(data.dividends||[]).filter(d=>!portfolioId||d.portfolioId===portfolioId).map(d=>({
+      kind:'dividend',id:d.id,at:d.receivedAt||d.date,portfolioId:d.portfolioId,portfolioName:names.get(d.portfolioId)||d.portfolioId,
+      type:'DIVIDEND',ticker:d.ticker,amountUSD:Number(d.netUSD)||0,note:d.notes||d.note||'',addedToCash:!!d.addedToCash
+    }));
+    return [...trades,...flows,...dividends].sort((a,b)=>String(b.at||'').localeCompare(String(a.at||''))||String(b.id||'').localeCompare(String(a.id||'')));
   }
   function wealth(data){
     const rate=data.exchangeRate||1;
@@ -208,6 +245,6 @@
     const losers=rows.filter(r=>r.profitUSD<-1e-9).sort((a,b)=>a.profitUSD-b.profitUSD||a.ticker.localeCompare(b.ticker)).slice(0,5);
     return {winners,losers,missing};
   }
-  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, commit, period, projection, upsertSnapshot, dailyMovers,
-    holdingValues, portfolioValue, lifetimePerformance, wealth, portfolioHealth, wealthStrength};
+  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, inputNumber, validDate, executionTime, commit, period, projection, upsertSnapshot, dailyMovers,
+    holdingValues, portfolioValue, lifetimePerformance, transactionTimeline, wealth, portfolioHealth, wealthStrength};
 });

@@ -19,6 +19,8 @@ function runtime(){
   vm.runInContext(fs.readFileSync(path.join(root,'app-data.js'),'utf8'),sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app-features.js'),'utf8'),sandbox);
   vm.runInContext(fs.readFileSync(path.join(root,'app-market.js'),'utf8'),sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root,'app-assets.js'),'utf8'),sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root,'app-ledger.js'),'utf8'),sandbox);
   const app=Object.assign(Object.create(sandbox.App.prototype),core.empty(),{cloudReady:true,isFirebaseOnline:true,revision:0,generation:'g',charts:{},displayCurrency:'USD'});
   for(const name of ['renderActiveTab','renderSpecCountersBar','setCloudStatus','updateSidebarFxRate'])app[name]=()=>{};
   app.showToast=value=>notices.push(value);
@@ -32,6 +34,34 @@ test('daily movers rank monetary impact, combine tickers and limit each side to 
   assert.equal(result.winners[0].portfolios.length,2);assert.equal(result.winners[1].ticker,'SMALL');
   assert.equal(result.losers.length,5);assert.equal(result.losers[0].ticker,'LOSS5');assert.equal(result.missing,1);
   assert.ok(![...result.winners,...result.losers].some(r=>r.ticker==='BTC'||r.ticker==='UNKNOWN'));
+});
+
+test('asset entry rejects blanks and invalid numbers without mutating holdings; preserves fractions and metadata',async()=>{
+  const {app,fields}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',name:'Microsoft',shares:1,avgCostUSD:10,currentPriceUSD:12,targetTHB:15000}]}];let saves=0;
+  app.saveData=async()=>{saves++;return true;};app.closeModal=()=>{};
+  const values={'holding-id':'h','holding-portfolio-id':'p','holding-ticker':'msft','holding-name':'Microsoft','holding-shares':'0.0094640','holding-avg-cost':'479.4208','holding-current-price':'513.851234','holding-1d-change':''};
+  for(const [id,value]of Object.entries(values))fields[id]={value};
+  const before=copy(app.portfolios);
+  for(const id of ['holding-name','holding-shares','holding-avg-cost','holding-current-price']){fields[id].value='';await app.saveHoldingForm();fields[id].value=values[id];assert.equal(saves,0);assert.deepEqual(app.portfolios,before);}
+  for(const bad of ['-1','abc','1,200','Infinity','1e9']){fields['holding-shares'].value=bad;await app.saveHoldingForm();assert.equal(saves,0);}
+  fields['holding-shares'].value=values['holding-shares'];await app.saveHoldingForm();
+  assert.equal(saves,1);const h=app.portfolios[0].holdings[0];assert.equal(h.shares,.009464);assert.equal(h.avgCostUSD,479.4208);assert.equal(h.currentPriceUSD,513.851234);assert.equal(h.targetTHB,15000);assert.equal(h.change1dPct,null);assert.equal(h.ticker,'MSFT');
+});
+
+test('trade validation rejects impossible dates, missing execution data, negative fees and oversized sale before mutation',async()=>{
+  const {app,fields,sandbox}=runtime();app.portfolios=[{...p(100),holdings:[{id:'h',ticker:'TEST',name:'Test asset',shares:1,avgCostUSD:10,currentPriceUSD:20}]}];
+  let saves=0;app.saveData=async()=>{saves++;return true;};sandbox.document.querySelector=()=>({value:'SELL'});
+  const values={'trade-stock-select':'p:::h','trade-shares':'.5','trade-price':'20','trade-executed-date':'2026-01-01','trade-executed-time':'12:30:15','trade-commission-usd':'0','trade-fee-usd':'0'};
+  for(const [id,value]of Object.entries(values))fields[id]={value};fields['trade-use-cash-buffer']={checked:true};
+  const before=copy(app.dataPayload());
+  for(const [id,bad]of [['trade-executed-date','2026-02-30'],['trade-executed-date',''],['trade-executed-time','24:01'],['trade-executed-date','2099-01-01'],['trade-shares','2'],['trade-shares',''],['trade-price','20xyz'],['trade-commission-usd','-1'],['trade-commission-usd','11']]){fields[id].value=bad;await app.executeTrade();fields[id].value=values[id];assert.equal(saves,0);assert.deepEqual(app.dataPayload(),before);}
+  app.closeModal=()=>{};await app.executeTrade();assert.equal(saves,1);assert.equal(app.tradingHistory[0].date,'2026-01-01T05:30:15.000Z');assert.equal(app.tradingHistory[0].assetName,'Test asset');
+});
+
+test('asset ledger presents cost, market value, allocation including cash, profit and escaped asset names in both layouts',()=>{
+  const {app}=runtime();app.renderStockLogoHTML=()=>'';const port={...p(100),holdings:[{id:'h',ticker:'TEST',name:'<script>unsafe</script>',shares:2,avgCostUSD:40,currentPriceUSD:50,change1dPct:null}]};
+  for(const layout of ['compact','full']){app.holdingsViewLayout=layout;const html=app.renderHoldingsLayoutHTML(port,port.holdings,app.calculatePortfolioStats(port));
+    assert.ok(html.includes('$80.00'));assert.ok(html.includes('$100.00'));assert.ok(html.includes('50.00% ของพอร์ต'));assert.ok(html.includes('+25.00%'));assert.ok(html.includes('$20.00'));assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));}
 });
 test('daily movers use native THB quotes and reject invalid daily percentages',()=>{
   const data={...core.empty(),exchangeRate:32,portfolios:[{id:'p',name:'P',holdings:[{ticker:'PTT.BK',currency:'THB',shares:100,currentPriceNative:35.2,currentPriceUSD:99,change1dPct:10},{ticker:'BAD',shares:1,currentPriceUSD:50,change1dPct:-100}]}]};
@@ -174,9 +204,24 @@ test('trade has both asset and cash legs, saves realized profit and never change
   const {app,fields,sandbox}=runtime();app.portfolios=[{...p(100),holdings:[{id:'h',ticker:'MSFT',shares:2,avgCostUSD:20,currentPriceUSD:25}]}];let action='BUY';
   sandbox.document.querySelector=()=>({value:action});app.closeModal=()=>{};app.saveData=async()=>true;
   for(const [id,value]of Object.entries({'trade-stock-select':'p:::h','trade-shares':'1','trade-price':'30','trade-fee-usd':'1','trade-selected-tag':'test','trade-custom-note':''}))fields[id]={value};
+  fields['trade-executed-date']={value:'2026-01-02'};fields['trade-executed-time']={value:'12:00'};
   fields['trade-use-cash-buffer']={checked:true};await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,69);assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,25);
   action='SELL';await app.executeTrade();assert.equal(app.portfolios[0].cashBufferUSD,98);assert.ok(Math.abs(app.tradingHistory[0].realizedPLUSD-16/3)<1e-10);assert.equal(app.tradingHistory[0].feeUSD,1);
+  assert.equal(app.tradingHistory[0].costBasisUSD,71/3);assert.equal(app.tradingHistory[0].sharesBefore,3);assert.equal(app.tradingHistory[0].sharesAfter,2);
+  assert.equal(app.tradingHistory[0].cashBeforeUSD,69);assert.equal(app.tradingHistory[0].cashAfterUSD,98);
   action='BUY';fields['trade-use-cash-buffer'].checked=false;await app.executeTrade();assert.equal(app.cashFlows[0].type,'DEPOSIT');assert.equal(app.cashFlows[0].amountUSD,31);
+  assert.equal(app.cashFlows[0].linkedTradeId,app.tradingHistory[0].id);
+  assert.equal(core.transactionTimeline(app.dataPayload(),'p').filter(row=>row.kind==='cash').length,0);
+});
+test('unified transaction history keeps manual funding, trades and realized returns without duplicate trade funding',()=>{
+  const data={...core.empty(),portfolios:[{...p(60),holdings:[{id:'h',ticker:'ABC',shares:1,avgCostUSD:80,currentPriceUSD:90}]}],
+    tradingHistory:[{id:'sale',date:'2026-09-11T05:00:00Z',type:'SELL',ticker:'ABC',portfolioId:'p',shares:1,priceUSD:50,totalUSD:50,feeUSD:2,netUSD:48,costBasisUSD:100,realizedPLUSD:-52}],
+    cashFlows:[{id:'fund',at:'2026-09-01T05:00:00Z',type:'DEPOSIT',portfolioId:'p',amountUSD:100,balanceBeforeUSD:0,balanceAfterUSD:100},{id:'trade-fund',at:'2026-09-11T05:00:00Z',type:'WITHDRAW',portfolioId:'p',amountUSD:48,linkedTradeId:'sale'}],
+    dividends:[{portfolioId:'p',date:'2026-09-05',netUSD:5}]};
+  const timeline=core.transactionTimeline(data,'p');assert.equal(timeline.length,3);assert.equal(timeline[0].type,'SELL');assert.equal(timeline[1].type,'DIVIDEND');assert.equal(timeline[2].type,'DEPOSIT');
+  assert.equal(timeline[0].costBasisUSD,100);assert.equal(timeline[0].realizedPLUSD,-52);
+  const result=core.lifetimePerformance(data,'p');assert.equal(result.unrealized,10);assert.equal(result.realized,-52);assert.equal(result.profit,-37);assert.equal(result.measuredCapital,180);
+  const {app}=runtime();Object.assign(app,data);const html=app.transactionLedgerHTML('p');assert.ok(html.includes('กำไร/ขาดทุนจริง'));assert.ok(html.includes('ต้นทุนที่ขาย'));assert.ok(html.includes('เงินสด'));assert.ok(!html.includes('trade-fund'));
 });
 test('failed dividend save does not close form or announce success',async()=>{
   const {app,fields,notices}=runtime();app.portfolios=[{...p(0),holdings:[{id:'h',ticker:'MSFT',shares:1,avgCostUSD:1,currentPriceUSD:1}]}];let closed=false;app.closeModal=()=>closed=true;app.saveData=async()=>false;

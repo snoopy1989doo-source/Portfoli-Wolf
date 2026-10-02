@@ -4888,8 +4888,8 @@ class PixelStewardApp {
         document.getElementById('holding-name').removeAttribute('data-autofilled');
         document.getElementById('holding-shares').value = h.shares !== undefined && h.shares !== null ? h.shares : '';
         document.getElementById('holding-avg-cost').value = h.avgCostUSD !== undefined && h.avgCostUSD !== null ? h.avgCostUSD : '';
-        document.getElementById('holding-current-price').value = (h.currentPriceUSD !== undefined && h.currentPriceUSD !== null && h.currentPriceUSD > 0) ? Number(parseFloat(h.currentPriceUSD).toFixed(3)) : (h.avgCostUSD || '');
-        document.getElementById('holding-1d-change').value = (h.change1dPct !== undefined && h.change1dPct !== null) ? Number(parseFloat(h.change1dPct).toFixed(2)) : '';
+        document.getElementById('holding-current-price').value = h.currentPriceUSD ?? '';
+        document.getElementById('holding-1d-change').value = h.change1dPct ?? '';
         
         // Populate 3-Tier Dip Targets
         const target1 = h.dipTarget1 !== undefined && h.dipTarget1 !== null ? h.dipTarget1 : (h.dipTargetUSD || '');
@@ -5023,8 +5023,7 @@ class PixelStewardApp {
     const port = this.portfolios.find(p => p.id === portId);
     const h = port?.holdings?.find(x => x.id === holdingId);
     if (h) {
-      const priceToUse = (prefillPrice && prefillPrice > 0) ? prefillPrice : (h.currentPriceUSD || h.avgCostUSD || 100);
-      document.getElementById('trade-price').value = priceToUse.toFixed(2);
+      document.getElementById('trade-price').value = prefillPrice>0 ? String(prefillPrice) : '';
       document.getElementById('trade-shares').value = '';
     }
     this.openModal('modal-trade');
@@ -5041,7 +5040,7 @@ class PixelStewardApp {
 
     const type = document.querySelector('input[name="trade-type"]:checked')?.value || 'BUY';
     const sharesInput = parseFloat(document.getElementById('trade-shares')?.value) || 0;
-    const priceInput = parseFloat(document.getElementById('trade-price')?.value) || (h.currentPriceUSD || h.avgCostUSD || 0);
+    const priceInput = Number(document.getElementById('trade-price')?.value) || 0;
     const feeUSD = Math.max(0, Number(document.getElementById('trade-fee-usd')?.value) || 0);
 
     const summaryEl = document.getElementById('trade-holding-summary');
@@ -5075,7 +5074,7 @@ class PixelStewardApp {
 
       const oldTotalCost = (h.shares || 0) * (h.avgCostUSD || 0);
       const newTotalShares = (h.shares || 0) + sharesInput;
-      const newAvgCost = newTotalShares > 0 ? (oldTotalCost + totalUSD) / newTotalShares : 0;
+      const newAvgCost = newTotalShares > 0 ? (oldTotalCost + totalUSD + feeUSD) / newTotalShares : 0;
       avgVal.textContent = `$${newAvgCost.toFixed(4)}`;
       avgVal.className = 'font-mono text-emerald';
     } else {
@@ -5105,37 +5104,43 @@ class PixelStewardApp {
     if (!port || !h) return;
 
     const type = document.querySelector('input[name="trade-type"]:checked').value;
-    const tradeShares = parseFloat(document.getElementById('trade-shares').value) || 0;
-    const tradePrice = parseFloat(document.getElementById('trade-price').value) || 0;
+    const tradeShares = PortfolioCore.inputNumber(document.getElementById('trade-shares').value,{exclusive:true});
+    const tradePrice = PortfolioCore.inputNumber(document.getElementById('trade-price').value,{exclusive:true});
     const useCashBuffer = document.getElementById('trade-use-cash-buffer').checked;
     const psychologyTag = document.getElementById('trade-selected-tag')?.value || '🎯 ช้อนตามแนวรับ';
     const customNote = (document.getElementById('trade-custom-note')?.value || '').trim();
-    const tradeDate=document.getElementById('trade-executed-date')?.value||PortfolioCore.bangkokDate();
-    const tradeTime=document.getElementById('trade-executed-time')?.value||'12:00';
+    const tradeDate=document.getElementById('trade-executed-date')?.value||'';
+    const tradeTime=document.getElementById('trade-executed-time')?.value||'';
     const orderType=document.getElementById('trade-order-type')?.value||'MARKET';
 
     if (!Number.isFinite(tradeShares) || !Number.isFinite(tradePrice) || tradeShares <= 0 || tradePrice <= 0) {
-      alert('กรุณากรอกจำนวนหุ้นและราคาให้ถูกต้อง');
-      return;
+      return this.entryError('form-trade',Number.isFinite(tradeShares)?'trade-price':'trade-shares','กรอกจำนวนหุ้นและราคาซื้อ/ขายจริงเป็นตัวเลขมากกว่าศูนย์');
     }
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(tradeDate)||tradeDate>PortfolioCore.bangkokDate()||!/^\d{2}:\d{2}$/.test(tradeTime)){
-      alert('กรุณาตรวจวันที่และเวลาทำรายการ');
-      return;
-    }
+    const executedAt=PortfolioCore.executionTime(tradeDate,tradeTime);
+    if(!executedAt||Date.parse(executedAt)>Date.now())return this.entryError('form-trade','trade-executed-date','กรอกวันที่และเวลาซื้อขายที่เกิดขึ้นจริง (เวลาไทย) ไม่ใช้วันเวลาในอนาคต');
+    if(!['BUY','SELL'].includes(type))return this.entryError('form-trade','trade-stock-select','เลือกประเภทรายการซื้อหรือขาย');
 
     const tradeTotalUSD = tradeShares * tradePrice;
-    const feeBreakdown={commissionUSD:Math.max(0,Number(document.getElementById('trade-commission-usd')?.value)||0),vatUSD:Math.max(0,Number(document.getElementById('trade-vat-usd')?.value)||0),exchangeFeeUSD:Math.max(0,Number(document.getElementById('trade-exchange-fee-usd')?.value)||0),tafFeeUSD:Math.max(0,Number(document.getElementById('trade-taf-fee-usd')?.value)||0)};
+    const feeBreakdown={};
+    for(const [field,input]of [['commissionUSD','trade-commission-usd'],['vatUSD','trade-vat-usd'],['exchangeFeeUSD','trade-exchange-fee-usd'],['tafFeeUSD','trade-taf-fee-usd']]){const value=PortfolioCore.inputNumber(document.getElementById(input)?.value,{optional:true});if(Number.isNaN(value))return this.entryError('form-trade',input,'ค่าธรรมเนียมต้องเป็นตัวเลขตั้งแต่ศูนย์');feeBreakdown[field]=value??0;}
     const detailedFee=Object.values(feeBreakdown).reduce((sum,value)=>sum+value,0);
-    const feeUSD=Math.max(0,detailedFee||Number(document.getElementById('trade-fee-usd')?.value)||0);
+    const fallbackFee=PortfolioCore.inputNumber(document.getElementById('trade-fee-usd')?.value,{optional:true});
+    if(Number.isNaN(fallbackFee))return this.entryError('form-trade','trade-fee-usd','ค่าธรรมเนียมต้องเป็นตัวเลขตั้งแต่ศูนย์');
+    const feeUSD=detailedFee||(fallbackFee??0);
+    if(!Number.isFinite(tradeTotalUSD)||!Number.isFinite(feeUSD)||!Number.isFinite(tradeTotalUSD+feeUSD))return this.entryError('form-trade','trade-price','ยอดรวมรายการไม่ถูกต้องหรือสูงเกินช่วงที่คำนวณได้');
+    if(type==='SELL'&&feeUSD>tradeTotalUSD)return this.entryError('form-trade','trade-commission-usd','ค่าธรรมเนียมรวมสูงกว่ามูลค่าขาย กรุณาตรวจข้อมูล');
     const costBeforeUSD = this.calculateHoldingStats(h).avgCost;
+    const sharesBefore=Number(h.shares)||0;
+    const cashBeforeUSD=Number(port.cashBufferUSD)||0;
+    const portfolioValueBeforeUSD=this.calculatePortfolioStats(port).totalValueUSD;
+    const tradeId=crypto.randomUUID();
     h.avgCostUSD = costBeforeUSD;
 
     if (type === 'BUY') {
       // Check cash buffer
       if (useCashBuffer) {
         if ((port.cashBufferUSD || 0) < tradeTotalUSD + feeUSD) {
-          alert('เงินสดไม่พอ กรุณาบันทึกเงินเติมก่อนบันทึกซื้อ');
-          return;
+          return this.entryError('form-trade','trade-shares','เงินสดไม่พอ กรุณาบันทึกเงินเติมก่อนบันทึกซื้อ');
         }
         port.cashBufferUSD = Math.max(0, (port.cashBufferUSD || 0) - tradeTotalUSD - feeUSD);
       }
@@ -5181,20 +5186,30 @@ class PixelStewardApp {
     }
 
     if (h.currency === 'THB') h.avgCostNative = h.avgCostUSD * this.exchangeRate;
-    const executedAt=new Date(`${tradeDate}T${tradeTime}:00+07:00`).toISOString();
-    if (!useCashBuffer) { const externalAmount=Math.max(0,type==='BUY'?tradeTotalUSD+feeUSD:tradeTotalUSD-feeUSD); this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:type==='BUY'?'DEPOSIT':'WITHDRAW',date:tradeDate,at:executedAt,amountUSD:externalAmount,amountTHB:externalAmount*this.exchangeRate,note:'เงินภายนอกพอร์ตจากรายการ '+type+' '+h.ticker}); }
+    if (!useCashBuffer) { const externalAmount=Math.max(0,type==='BUY'?tradeTotalUSD+feeUSD:tradeTotalUSD-feeUSD); this.cashFlows.push({id:crypto.randomUUID(),portfolioId:port.id,type:type==='BUY'?'DEPOSIT':'WITHDRAW',date:tradeDate,at:executedAt,amountUSD:externalAmount,amountTHB:externalAmount*this.exchangeRate,exchangeRate:this.exchangeRate,source:'trade',linkedTradeId:tradeId,note:'เงินภายนอกพอร์ตจากรายการ '+type+' '+h.ticker}); }
     if (!this.tradingHistory) this.tradingHistory = [];
     this.tradingHistory.unshift({
-      id: 'trade-' + Date.now(),
+      id: tradeId,
       date: executedAt,
       type,
       portfolioId: port.id,
       portfolioName: port.name,
       ticker: h.ticker,
+      assetName: h.name || h.ticker,
       shares: tradeShares,
       priceUSD: tradePrice,
       totalUSD: tradeTotalUSD,
       realizedPLUSD: type === 'SELL' ? tradeTotalUSD - feeUSD - tradeShares * costBeforeUSD : null,
+      costBasisUSD:type==='SELL'?tradeShares*costBeforeUSD:null,
+      sharesBefore,
+      sharesAfter:Number(h.shares)||0,
+      avgCostBeforeUSD:costBeforeUSD,
+      avgCostAfterUSD:Number(h.avgCostUSD)||0,
+      cashBeforeUSD,
+      cashAfterUSD:Number(port.cashBufferUSD)||0,
+      portfolioValueBeforeUSD,
+      portfolioValueAfterUSD:this.calculatePortfolioStats(port).totalValueUSD,
+      fundingSource:useCashBuffer?'cash-buffer':'external',
       feeUSD,
       feeBreakdown,
       orderType,
