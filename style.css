@@ -3524,6 +3524,29 @@ body.privacy-mode #privacy-icon {
   margin-top: 24px;
 }
 
+.quarter-report {
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 12px;
+  line-height: 1.6;
+}
+.quarter-report summary { cursor: pointer; font-weight: 700; }
+.quarter-report ul { margin: 8px 0 16px; padding-inline-start: 24px; }
+.quarter-report .btn { margin: 4px 8px 0 0; }
+#quarter-print-root { display: none; }
+@media print {
+  body > :not(#quarter-print-root) { display: none !important; }
+  #quarter-print-root { display: block !important; color: #17202b; background: #fff; font: 12pt/1.5 system-ui, sans-serif; margin: 0; }
+  #quarter-print-root h1 { font-size: 22pt; margin-bottom: 4pt; }
+  #quarter-print-root h2 { font-size: 15pt; margin-top: 18pt; border-bottom: 1px solid #ccd5dc; }
+  #quarter-print-root .muted { color: #526575; }
+  #quarter-print-root .notice { padding: 8pt; background: #f3f5f7; }
+  #quarter-print-root .value { font-size: 24pt; font-weight: 700; }
+  #quarter-print-root table { width: 100%; border-collapse: collapse; }
+  #quarter-print-root td, #quarter-print-root th { text-align: left; padding: 6pt; border-bottom: 1px solid #dde3e8; }
+}
+
 .benchmark-legend {
   display: flex;
   gap: 16px;

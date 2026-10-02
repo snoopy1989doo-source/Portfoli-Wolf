@@ -17,6 +17,17 @@
     const index = ['03-31', '06-30', '09-30', '12-31'].indexOf(date.slice(5));
     return index < 0 ? null : { year: Number(date.slice(0, 4)), quarter: `Q${index + 1}`, date };
   }
+  function completedQuarters(startDate, today = bangkokDate()) {
+    if (!validDate(startDate) || !validDate(today) || startDate > today) return [];
+    const result=[];
+    for(let year=Number(startDate.slice(0,4));year<=Number(today.slice(0,4));year++){
+      for(const [index,day] of ['03-31','06-30','09-30','12-31'].entries()){
+        const date=`${year}-${day}`;
+        if(date>=startDate && date<today)result.push({year,quarter:`Q${index+1}`,date});
+      }
+    }
+    return result;
+  }
   function inputNumber(raw, {optional=false, min=0, exclusive=false}={}) {
     const text=String(raw??'').trim();
     if(!text)return optional?null:NaN;
@@ -78,6 +89,7 @@
     return {...current, revision: expectedRevision + 1, data: normalize(next)};
   }
   function period(previous, current, flows = [], currency = 'USD') {
+    if(previous.basis==='late-current'||current.basis==='late-current')return {start:previous.totalUSD,end:current.totalUSD,incomplete:true,returnPct:null};
     const factor = s => currency === 'THB' ? s.exchangeRate : 1;
     const start = previous.totalUSD * factor(previous);
     const end = current.totalUSD * factor(current);
@@ -100,7 +112,7 @@
       returnPct: !adjustments && denominator > 0 ? profit / denominator * 100 : null};
   }
   function projection(snapshots, flows, currency = 'USD', years = 1) {
-    const points = snapshots.filter(s => s.recordedAt && Number.isFinite(s.totalUSD)).slice().sort((a,b) => a.recordedAt.localeCompare(b.recordedAt));
+    const points = snapshots.filter(s => s.recordedAt && s.basis!=='late-current' && Number.isFinite(s.totalUSD)).slice().sort((a,b) => a.recordedAt.localeCompare(b.recordedAt));
     if (points.length < 4) return {available:false, reason:'ต้องมีประวัติอย่างน้อย 4 ไตรมาสที่บันทึกจริง'};
     let growth = 1;
     for (let i=1; i<points.length; i++) {
@@ -120,7 +132,7 @@
     const end = quarterEnd(completedAt);
     if (!end || end.date !== requestDate || snapshot.date !== requestDate) return snapshots;
     const existing = snapshots.find(s=>s.year===end.year && s.quarter===end.quarter);
-    if (existing && existing.recordedAt >= snapshot.recordedAt) return snapshots;
+    if (existing && existing.basis!=='late-current' && existing.recordedAt >= snapshot.recordedAt) return snapshots;
     return [...snapshots.filter(s=>s.year!==end.year || s.quarter!==end.quarter), clone(snapshot)];
   }
   const clamp = n => Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
@@ -245,6 +257,6 @@
     const losers=rows.filter(r=>r.profitUSD<-1e-9).sort((a,b)=>a.profitUSD-b.profitUSD||a.ticker.localeCompare(b.ticker)).slice(0,5);
     return {winners,losers,missing};
   }
-  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, inputNumber, validDate, executionTime, commit, period, projection, upsertSnapshot, dailyMovers,
+  return {clone, empty, normalize, validateImport, bangkokDate, quarterEnd, completedQuarters, inputNumber, validDate, executionTime, commit, period, projection, upsertSnapshot, dailyMovers,
     holdingValues, portfolioValue, lifetimePerformance, transactionTimeline, wealth, portfolioHealth, wealthStrength};
 });

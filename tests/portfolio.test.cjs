@@ -81,6 +81,56 @@ test('Bangkok boundaries and exact quarter end days',()=>{
   assert.equal(core.quarterEnd('2026-09-30T16:00:00Z').quarter,'Q3');
   assert.equal(core.quarterEnd('2026-09-09T00:00:00Z'),null);
 });
+test('completed quarters stop before today and retain exact quarter dates',()=>{
+  assert.deepEqual(core.completedQuarters('2026-04-01','2026-10-02'),[
+    {year:2026,quarter:'Q2',date:'2026-06-30'},
+    {year:2026,quarter:'Q3',date:'2026-09-30'}]);
+  assert.deepEqual(core.completedQuarters('2026-09-30','2026-09-30'),[]);
+});
+test('missed quarter is saved once with actual valuation date and excluded from period returns',async()=>{
+  const {app}=runtime();app.portfolios=[{...p(125),holdings:[{id:'h',ticker:'MSFT',shares:1,avgCostUSD:100,currentPriceUSD:110,openingBalanceDate:'2026-09-01'}]}];
+  let saves=0;app.saveData=async()=>{saves++;return true;};
+  assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),true);
+  const snap=app.quarterlySnapshots[0];
+  assert.equal(snap.date,'2026-09-30');assert.equal(snap.basis,'late-current');assert.equal(snap.totalUSD,235);
+  assert.ok(snap.valuationAt.startsWith('2026-'));
+  assert.equal(snap.performance.unrealizedUSD,10);
+  assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),false);assert.equal(saves,1);
+  const prior={year:2026,quarter:'Q2',date:'2026-06-30',recordedAt:'2026-06-30T12:00:00Z',totalUSD:200,exchangeRate:32,portValuesUSD:{p:200}};
+  assert.equal(core.period(prior,snap,[]).incomplete,true);
+  assert.equal(core.period(prior,snap,[]).returnPct,null);
+  const md=app.quarterlyReportMarkdown('2026-Q3');assert.match(md,/ไม่ใช่มูลค่าสิ้นไตรมาสจริง/);assert.match(md,/คำนวณไม่ได้จากข้อมูลที่มี/);
+});
+test('automatic missed-quarter capture commits to the Cloud document without duplicate writes',async()=>{
+  const {app}=runtime();app.portfolios=[{...p(40),holdings:[{id:'h',ticker:'ABC',shares:2,avgCostUSD:10,currentPriceUSD:12,openingBalanceDate:'2026-09-01'}]}];
+  let stored={schemaVersion:4,revision:0,generation:'g',data:core.empty()},writes=0;
+  app.cloudBaseline=copy(stored);app.dbRef={};
+  app.cloudStore={transaction:async fn=>{const next=fn(stored);if(!next)return {committed:false,snapshot:{val:()=>stored}};stored={...stored,...next};writes++;return {committed:true,snapshot:{val:()=>stored}};}};
+  app.acceptCloud=value=>{Object.assign(app,core.normalize(value.data));app.revision=value.revision;app.generation=value.generation;app.cloudBaseline=copy(value);app.cloudReady=true;};
+  assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),true);
+  assert.equal(stored.data.quarterlySnapshots[0].basis,'late-current');assert.equal(stored.data.quarterlySnapshots[0].totalUSD,64);
+  assert.equal(stored.data.quarterlySnapshots[0].date,'2026-09-30');assert.equal(writes,1);
+  assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),false);assert.equal(writes,1);
+});
+test('quarter report print stays in the same tab and escapes portfolio names',()=>{
+  const {app,sandbox}=runtime();let printed=0,root;
+  sandbox.document.createElement=()=>({id:'',innerHTML:'',remove(){}});
+  sandbox.document.body={appendChild:element=>{root=element;}};
+  sandbox.window.addEventListener=()=>{};sandbox.window.print=()=>{printed++;};
+  app.quarterlySnapshots=[{year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-10-02T00:00:00Z',valuationAt:'2026-10-02T00:00:00Z',basis:'late-current',totalUSD:100,exchangeRate:33,portValuesUSD:{p:100},portNames:{p:'<script>alert(1)</script>'}}];
+  app.printQuarterlyReport('2026-Q3');assert.equal(printed,1);assert.equal(root.id,'quarter-print-root');
+  assert.ok(root.innerHTML.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));assert.ok(!root.innerHTML.includes('<script>'));
+});
+test('new late snapshot uses refreshed quote from the same opening when available',async()=>{
+  const {app}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'ABC',shares:2,avgCostUSD:10,currentPriceUSD:12}]}];
+  app.quarterlySnapshots=[{year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-10-02T00:00:00Z',valuationAt:'2026-10-02T00:00:00Z',basis:'late-current',totalUSD:24,exchangeRate:33,portValuesUSD:{p:24}}];
+  app.checkAndAutoRecordQuarterlySnapshots=async()=>{app.lateSnapshotKeysFromOpen=['2026-Q3'];};
+  app.syncLiveMarketPrices=async()=>{app.portfolios[0].holdings[0].currentPriceUSD=15;return 1;};
+  let saved=0;app.saveData=async()=>{saved++;return true;};
+  await app.startQuarterlyOpenCheck();
+  assert.equal(saved,1);assert.equal(app.quarterlySnapshots[0].totalUSD,30);
+  assert.equal(app.quarterlySnapshots[0].basis,'late-current');assert.equal(app.quarterlySnapshots[0].date,'2026-09-30');
+});
 test('price alerts trigger once on entry, rearm on exit and never write Cloud',()=>{
   const {app,notices,sandbox}=runtime();app.dbRef={transaction:()=>{throw Error('Quote wrote Cloud');}};
   sandbox.document.visibilityState='hidden'; // An open background tab may still receive prices.
