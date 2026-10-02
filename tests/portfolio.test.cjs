@@ -131,6 +131,13 @@ test('new late snapshot uses refreshed quote from the same opening when availabl
   assert.equal(saved,1);assert.equal(app.quarterlySnapshots[0].totalUSD,30);
   assert.equal(app.quarterlySnapshots[0].basis,'late-current');assert.equal(app.quarterlySnapshots[0].date,'2026-09-30');
 });
+test('quarter report does not call a multi-quarter gap one quarter of profit',()=>{
+  const {app}=runtime();
+  app.quarterlySnapshots=[{year:2026,quarter:'Q1',date:'2026-03-31',recordedAt:'2026-03-31T12:00:00Z',totalUSD:100,exchangeRate:33,portValuesUSD:{p:100}},
+    {year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-09-30T12:00:00Z',totalUSD:130,exchangeRate:33,portValuesUSD:{p:130}}];
+  const md=app.quarterlyReportMarkdown('2026-Q3');
+  assert.match(md,/กำไรหลังหักเงินเติม\/ถอนของไตรมาส: คำนวณไม่ได้จากข้อมูลที่มี/);
+});
 test('price alerts trigger once on entry, rearm on exit and never write Cloud',()=>{
   const {app,notices,sandbox}=runtime();app.dbRef={transaction:()=>{throw Error('Quote wrote Cloud');}};
   sandbox.document.visibilityState='hidden'; // An open background tab may still receive prices.

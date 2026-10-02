@@ -536,7 +536,8 @@ Object.assign(PixelStewardApp.prototype, {
     const actual=snapshots.filter(s=>s.basis!=='late-current');
     const projection=PortfolioCore.projection(actual,this.cashFlows,currency);
     const rows=snapshots.map((s,i)=>{
-      const result=i?PortfolioCore.period(snapshots[i-1],s,this.cashFlows,currency):null;
+      const prior=snapshots[i-1],consecutive=prior&&(s.year*4+Number(s.quarter.slice(1)))-(prior.year*4+Number(prior.quarter.slice(1)))===1;
+      const result=consecutive?PortfolioCore.period(prior,s,this.cashFlows,currency):null;
       const late=s.basis==='late-current';
       const status=late?`ย้อนหลัง • มูลค่าล่าสุด ${this.escapeHtml(s.valuationAt||s.recordedAt)}`:'บันทึกในวันสิ้นไตรมาส';
       return `<tr><td>${s.quarter}/${s.year}<br><small>${this.escapeHtml(s.date)}</small><br><small>${status}</small></td><td>${money(s.totalUSD*(currency==='THB'?s.exchangeRate:1))}</td><td>${result&&!result.incomplete?money(result.deposits||0):'—'}</td><td>${result&&!result.incomplete?money(result.withdrawals||0):'—'}</td><td>${result&&!result.incomplete?money(result.profit):'ยังคำนวณไม่ได้'}</td><td>${result?.returnPct!=null?result.returnPct.toFixed(2)+'%':'—'}</td></tr>`;
@@ -567,7 +568,8 @@ Object.assign(PixelStewardApp.prototype, {
     if(!snapshot)return null;
     const late=snapshot.basis==='late-current',format=n=>Number(n||0).toFixed(2),safe=v=>String(v??'').replace(/\|/g,'\\|').replace(/[\r\n]+/g,' ');
     const previous=this.quarterlySnapshots.filter(s=>s.date<snapshot.date&&s.basis!=='late-current').sort((a,b)=>b.date.localeCompare(a.date))[0];
-    const interval=previous&&!late?PortfolioCore.period(previous,snapshot,this.cashFlows,'USD'):null;
+    const consecutive=previous&&(snapshot.year*4+Number(snapshot.quarter.slice(1)))-(previous.year*4+Number(previous.quarter.slice(1)))===1;
+    const interval=consecutive&&!late?PortfolioCore.period(previous,snapshot,this.cashFlows,'USD'):null;
     const complete=interval&&!interval.incomplete;
     const ports=Object.entries(snapshot.portValuesUSD||{}).sort((a,b)=>b[1]-a[1]);
     let md=`# สรุป ${snapshot.quarter}/${snapshot.year}\n\n`;
@@ -627,7 +629,7 @@ Object.assign(PixelStewardApp.prototype, {
     const usable=snapshots.filter(s=>cache[s.date]);
     if(usable.length<2){host.innerHTML='<p>ยังไม่มีข้อมูลเปรียบเทียบ กดอัปเดตหลังมีประวัติจริงอย่างน้อย 2 ไตรมาส</p>';return;}
     const mode=this.benchmarkMode==='price'?'price':'total',base=usable[0],labels=usable.map(s=>`${s.quarter}/${s.year}`),portfolio=[0],defs=[['SPY','S&P 500','#18d391'],['QQQ','Nasdaq-100','#8b5cf6'],['DIA','Dow Jones','#f59e0b']];
-    for(let i=1;i<usable.length;i++){const period=PortfolioCore.period(usable[i-1],usable[i],this.cashFlows,'USD'),from=Date.parse(usable[i-1].recordedAt),to=Date.parse(usable[i].recordedAt),outsideCash=(this.dividends||[]).filter(d=>!d.addedToCash&&Date.parse(d.date||d.receivedAt)>from&&Date.parse(d.date||d.receivedAt)<=to).reduce((s,d)=>s+(Number(d.netUSD)||0),0),rate=!period.incomplete&&period.denominator>0?(period.profit+outsideCash)/period.denominator:null;portfolio.push(rate==null?null:((1+portfolio[i-1]/100)*(1+rate)-1)*100);}
+    for(let i=1;i<usable.length;i++){const prior=usable[i-1],current=usable[i],consecutive=(current.year*4+Number(current.quarter.slice(1)))-(prior.year*4+Number(prior.quarter.slice(1)))===1,period=PortfolioCore.period(prior,current,this.cashFlows,'USD'),from=Date.parse(prior.recordedAt),to=Date.parse(current.recordedAt),outsideCash=(this.dividends||[]).filter(d=>!d.addedToCash&&Date.parse(d.date||d.receivedAt)>from&&Date.parse(d.date||d.receivedAt)<=to).reduce((s,d)=>s+(Number(d.netUSD)||0),0),rate=consecutive&&!period.incomplete&&period.denominator>0?(period.profit+outsideCash)/period.denominator:null;portfolio.push(rate==null||portfolio[i-1]==null?null:((1+portfolio[i-1]/100)*(1+rate)-1)*100);}
     const datasets=[{label:'พอร์ตของคุณ',data:portfolio,borderColor:'#38bdf8',borderWidth:3,tension:0,fill:false},...defs.map(([symbol,label,color])=>{const first=cache[base.date]?.[symbol]?.[mode];return {label,data:usable.map(s=>{const v=cache[s.date]?.[symbol]?.[mode];return first>0&&v>0?(v/first-1)*100:null;}),borderColor:color,tension:0,fill:false};})];
     host.innerHTML=`<p>ฐานเปรียบเทียบ ${this.escapeHtml(base.date)} · อัปเดต ${this.escapeHtml(this.benchmarkCache.updatedAt||'')}</p><div style="height:300px"><canvas id="chart-benchmark-market"></canvas></div>`;
     if(typeof Chart!=='undefined')this.charts.marketBenchmark=new Chart(document.getElementById('chart-benchmark-market'),{type:'line',data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{y:{ticks:{callback:v=>v+'%'}}}}});
