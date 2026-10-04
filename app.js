@@ -2921,16 +2921,6 @@ class PixelStewardApp {
         </div>
       </div>
 
-      <!-- DIME TRADE JOURNAL & PSYCHOLOGY LOG -->
-      <div class="chart-card" style="margin-top: 24px;">
-        <div class="chart-title">
-          <span>📓 บันทึกประวัติการซื้อ-ขาย & จิตวิทยา (Trade Journal)</span>
-          <span class="badge font-mono" style="background:rgba(168,85,247,0.2); color:#c084fc;">${(this.tradingHistory || []).length} รายการ</span>
-        </div>
-        <div class="trading-journal-list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px;">
-          ${this.renderTradingHistoryHTML()}
-        </div>
-      </div>
     `;
 
     container.innerHTML = html;
@@ -3758,7 +3748,7 @@ class PixelStewardApp {
       { id: 'dividends', icon: '💰', title: 'บันทึกเงินปันผล', sub: 'ประวัติรับปันผลและ Passive Income' },
       { id: 'wealth', icon: '🏛️', title: 'สินทรัพย์', sub: 'บันทึกและติดตามมูลค่าสินทรัพย์' },
       { id: 'simulator', icon: '🔮', title: 'จำลองเงินล้าน (Simulator)', sub: 'พลังดอกเบี้ยทบต้นและเป้าหมายสู่อิสรภาพ' },
-      { id: 'quarterly', icon: '📈', title: 'เปรียบเทียบผลงานรายไตรมาส', sub: 'Snapshot Q1/Q2/Q3/Q4 และการเติบโต' },
+      { id: 'quarterly', icon: '📈', title: 'Growth / Quarter', sub: 'Snapshot Q1/Q2/Q3/Q4 และการเติบโต' },
       { id: 'settings', icon: '⚙️', title: 'ตั้งค่า, AI Vault & ฐานข้อมูล', sub: 'จัดการบัญชี Firebase อัตราแลกเปลี่ยน และส่งออก Markdown' }
     ].filter(item => !q || item.title.toLowerCase().includes(q) || item.sub.toLowerCase().includes(q));
 
@@ -4634,7 +4624,7 @@ class PixelStewardApp {
       dividends: 'บันทึกเงินปันผลรับ (Dividend Log)',
       wealth: 'สินทรัพย์',
       simulator: 'จำลองเงินล้าน & ดอกเบี้ยทบต้น',
-      quarterly: 'เปรียบเทียบผลงานรายไตรมาส',
+      quarterly: 'Growth / Quarter',
       obsidian: 'Obsidian & AI Second Brain',
       settings: 'ตั้งค่าระบบ & ฐานข้อมูล'
     };

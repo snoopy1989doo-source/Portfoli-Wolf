@@ -395,9 +395,9 @@ Object.assign(PixelStewardApp.prototype, {
       if(received>0&&justCreated.length&&this.cloudReady&&this.isFirebaseOnline&&!this.saving&&!this.viewDirty&&!document.querySelector('.modal-backdrop.open')){
         const valuationAt=new Date().toISOString();
         this.quarterlySnapshots=this.quarterlySnapshots.map(s=>{
-          if(!justCreated.includes(`${s.year}-${s.quarter}`)||s.basis!=='late-current')return s;
-          return {...this.createCurrentPortfolioSnapshot(s.year,s.quarter,s.date,'บันทึกย้อนหลังจากมูลค่าล่าสุด ไม่ใช่มูลค่าสิ้นไตรมาสจริง'),
-            basis:'late-current',valuationAt,recordedAt:valuationAt};
+          if(!justCreated.includes(`${s.year}-${s.quarter}`)||s.basis!=='quarter-visit')return s;
+          return {...this.createCurrentPortfolioSnapshot(s.year,s.quarter,s.date,'สรุปไตรมาสจากวันเปิดเว็บครั้งแรกหลังสิ้นไตรมาส'),
+            basis:'quarter-visit',valuationAt,recordedAt:valuationAt};
         });
         await this.saveData({snapshot:true});
       }
@@ -409,20 +409,22 @@ Object.assign(PixelStewardApp.prototype, {
   },
   async checkAndAutoRecordQuarterlySnapshots(today=PortfolioCore.bangkokDate()) {
     if(!this.cloudReady||!this.isFirebaseOnline||this.saving||this.viewDirty||document.querySelector('.modal-backdrop.open'))return false;
-    const evidence=[...(this.quarterlySnapshots||[]).map(s=>s.date),...(this.cashFlows||[]).map(f=>f.date||String(f.at||'').slice(0,10)),
-      ...(this.tradingHistory||[]).map(t=>String(t.date||'').slice(0,10)),...this.portfolios.flatMap(p=>(p.holdings||[]).map(h=>h.openingBalanceDate))].filter(PortfolioCore.validDate);
-    if(!evidence.length&&!this.portfolios.length&&!Object.keys(this.tradingData||{}).length)return false;
-    const latestCompleted=PortfolioCore.completedQuarters(`${Number(today.slice(0,4))-1}-01-01`,today).at(-1);
-    const start=evidence.length?evidence.sort()[0]:(latestCompleted?.date||today);
-    const missing=PortfolioCore.completedQuarters(start,today).filter(q=>!(this.quarterlySnapshots||[]).some(s=>s.year===q.year&&s.quarter===q.quarter));
-    if(!missing.length)return false;
-    const valuationAt=new Date().toISOString();
-    const additions=missing.map(q=>({...this.createCurrentPortfolioSnapshot(q.year,q.quarter,q.date,'บันทึกย้อนหลังจากมูลค่าล่าสุด ไม่ใช่มูลค่าสิ้นไตรมาสจริง'),
-      basis:'late-current',valuationAt,recordedAt:valuationAt}));
-    this.quarterlySnapshots=[...this.quarterlySnapshots,...additions].sort((a,b)=>a.date.localeCompare(b.date));
+    const completed=PortfolioCore.completedQuarters(`${Number(today.slice(0,4))-1}-01-01`,today).at(-1);
+    if(!completed)return false;
+    let migrated=false;
+    this.quarterlySnapshots=(this.quarterlySnapshots||[]).map(s=>{
+      if(s.basis!=='late-current'||!(s.year===2026&&s.quarter==='Q3'||s.year===completed.year&&s.quarter===completed.quarter))return s;
+      migrated=true;return {...s,basis:'quarter-visit',notes:'สรุปไตรมาสจากวันเปิดเว็บใกล้สิ้นไตรมาส ตามวิธีบันทึกที่กำหนด',originalBasis:s.basis};
+    });
+    const evidence=[...this.quarterlySnapshots.map(s=>s.date),...(this.cashFlows||[]).map(f=>f.date||String(f.at||'').slice(0,10)),...(this.tradingHistory||[]).map(t=>String(t.date||'').slice(0,10)),...this.portfolios.flatMap(p=>(p.holdings||[]).map(h=>h.openingBalanceDate))].filter(PortfolioCore.validDate);
+    const eligible=(this.portfolios.length||Object.keys(this.tradingData||{}).length)&&(evidence.length?evidence.sort()[0]<=completed.date:true);
+    const missing=eligible&&!this.quarterlySnapshots.some(s=>s.year===completed.year&&s.quarter===completed.quarter);
+    if(!missing&&!migrated)return false;
+    if(missing){const valuationAt=new Date().toISOString();this.quarterlySnapshots.push({...this.createCurrentPortfolioSnapshot(completed.year,completed.quarter,completed.date,'สรุปไตรมาสจากวันเปิดเว็บครั้งแรกหลังสิ้นไตรมาส'),basis:'quarter-visit',valuationAt,recordedAt:valuationAt});}
+    this.quarterlySnapshots.sort((a,b)=>a.date.localeCompare(b.date));
     const saved=await this.saveData({snapshot:true});
-    if(saved)this.lateSnapshotKeysFromOpen=missing.map(q=>`${q.year}-${q.quarter}`);
-    if(saved)this.showToast({title:'บันทึกไตรมาสที่พลาดแล้ว',message:`${missing.map(q=>`${q.quarter}/${q.year}`).join(', ')} ใช้มูลค่าล่าสุดวันที่ ${today} และระบุว่าเป็นข้อมูลย้อนหลัง`,type:'info'});
+    if(saved&&missing)this.lateSnapshotKeysFromOpen=[`${completed.year}-${completed.quarter}`];
+    if(saved)this.showToast({title:'บันทึกสรุปไตรมาสแล้ว',message:missing?`${completed.quarter}/${completed.year} ใช้ยอดวันเปิดเว็บ ${today}`:'ปรับรายงานเดิมเป็นสรุปไตรมาส โดยคงยอดและวันประเมินเดิม',type:'info'});
     return saved;
   },
   createCurrentPortfolioSnapshot(year,quarter,dateStr,notes='') {
@@ -543,16 +545,16 @@ Object.assign(PixelStewardApp.prototype, {
       const prior=snapshots[i-1],consecutive=prior&&(s.year*4+Number(s.quarter.slice(1)))-(prior.year*4+Number(prior.quarter.slice(1)))===1;
       const result=consecutive?PortfolioCore.period(prior,s,this.cashFlows,currency):null;
       const late=s.basis==='late-current';
-      const status=late?`ย้อนหลัง • มูลค่าล่าสุด ${this.escapeHtml(s.valuationAt||s.recordedAt)}`:'บันทึกในวันสิ้นไตรมาส';
+      const status=late?`ย้อนหลัง • มูลค่าล่าสุด ${this.escapeHtml(s.valuationAt||s.recordedAt)}`:s.basis==='quarter-visit'?`วันประเมิน ${PortfolioCore.bangkokDate(Date.parse(s.valuationAt||s.recordedAt))}`:'บันทึกในวันสิ้นไตรมาส';
       return `<tr><td>${s.quarter}/${s.year}<br><small>${this.escapeHtml(s.date)}</small><br><small>${status}</small></td><td>${money(s.totalUSD*(currency==='THB'?s.exchangeRate:1))}</td><td>${result&&!result.incomplete?money(result.deposits||0):'—'}</td><td>${result&&!result.incomplete?money(result.withdrawals||0):'—'}</td><td>${result&&!result.incomplete?money(result.profit):'ยังคำนวณไม่ได้'}</td><td>${result?.returnPct!=null?result.returnPct.toFixed(2)+'%':'—'}</td></tr>`;
     }).join('');
     const reports=snapshots.slice().reverse().map(s=>{const late=s.basis==='late-current',total=s.totalUSD*(currency==='THB'?s.exchangeRate:1),perf=s.performance;
       const previous=snapshots.filter(p=>p.date<s.date&&p.basis!=='late-current').at(-1);
       const allocations=Object.entries(s.portValuesUSD||{}).sort((a,b)=>b[1]-a[1]).map(([id,value])=>{const pct=s.totalUSD>0?value/s.totalUSD*100:0,prior=previous?.portValuesUSD?.[id],oldPct=previous?.totalUSD>0&&Number.isFinite(prior)?prior/previous.totalUSD*100:null;
         return `<li>${this.escapeHtml(s.portNames?.[id]||id)}: ${money(value*(currency==='THB'?s.exchangeRate:1))} (${pct.toFixed(1)}%) ${!late&&oldPct!=null?`· เปลี่ยน ${(pct-oldPct).toFixed(1)} จุดเปอร์เซ็นต์`:''}</li>`;}).join('');
-      return `<details class="quarter-report"><summary>${s.quarter}/${s.year} · ${money(total)} · ${late?'บันทึกย้อนหลัง':'สิ้นไตรมาสจริง'}</summary><p>${late?`ใช้มูลค่าล่าสุด ณ ${this.escapeHtml(s.valuationAt||s.recordedAt)} ไม่ใช่มูลค่าจริงของ ${this.escapeHtml(s.date)}`:`บันทึก ณ ${this.escapeHtml(s.recordedAt)}`}</p><p>กำไรรวมตั้งแต่เริ่มบันทึก ณ วันประเมิน: ${perf?money(perf.totalProfitUSD*(currency==='THB'?s.exchangeRate:1)):'ไม่มีข้อมูล'}</p><p>สินทรัพย์ที่มีกำไรที่ยังไม่ขายสูงสุด ณ วันประเมิน: ${s.bestHolding?`${this.escapeHtml(s.bestHolding.ticker)} (${money(s.bestHolding.profitUSD*(currency==='THB'?s.exchangeRate:1))})`:'ไม่มีข้อมูล'}</p><h4>การจัดสรรตามพอร์ต</h4><ul>${allocations||'<li>ไม่มีข้อมูล</li>'}</ul><p>คำแนะนำปรับสมดุล: พักฟีเจอร์นี้ตามที่ผู้ใช้ระบุไว้ในเซต 5</p><button class="btn btn-secondary" data-quarter-md="${s.year}-${s.quarter}">ดาวน์โหลด .md</button><button class="btn btn-secondary" data-quarter-pdf="${s.year}-${s.quarter}">บันทึก PDF</button></details>`;}).join('');
-    container.innerHTML=`<section class="benchmark-card"><h2>การเติบโตของพอร์ต</h2><p>เทียบกับประวัติของคุณเอง • ${currency}</p><p>เปิดเว็บแล้วระบบตรวจไตรมาสที่ขาดให้อัตโนมัติ ถ้าเปิดหลังวันสิ้นไตรมาสจะใช้มูลค่าล่าสุดและระบุวันที่จริง ไม่ใช้คำนวณผลตอบแทนไตรมาส</p><p>31 มีนาคม · 30 มิถุนายน · 30 กันยายน · 31 ธันวาคม (เวลาไทย)</p><p>${this.escapeHtml(this.marketStatus||'กำลังรอราคา')}</p></section>
-    <section class="benchmark-card"><h3>มูลค่าที่บันทึกในวันสิ้นไตรมาส</h3>${actual.length?'<div style="height:300px"><canvas id="chart-growth-actual"></canvas></div>':'<p>ยังไม่มีประวัติสิ้นไตรมาสจริง กราฟจะไม่ใช้มูลค่าที่บันทึกย้อนหลังแทน</p>'}</section>
+      return `<details class="quarter-report"><summary>${s.quarter}/${s.year} · ${money(total)} · ${late?'รายงานเดิมย้อนหลัง':s.basis==='quarter-visit'?'สรุปไตรมาสจากวันเปิดเว็บ':'สิ้นไตรมาส'}</summary><p>${late?`ใช้มูลค่าล่าสุด ณ ${this.escapeHtml(s.valuationAt||s.recordedAt)} ไม่ใช่มูลค่าจริงของ ${this.escapeHtml(s.date)}`:`บันทึก ณ ${this.escapeHtml(s.recordedAt)}`}</p><p>กำไรรวมตั้งแต่เริ่มบันทึก ณ วันประเมิน: ${perf?money(perf.totalProfitUSD*(currency==='THB'?s.exchangeRate:1)):'ไม่มีข้อมูล'}</p><p>สินทรัพย์ที่มีกำไรที่ยังไม่ขายสูงสุด ณ วันประเมิน: ${s.bestHolding?`${this.escapeHtml(s.bestHolding.ticker)} (${money(s.bestHolding.profitUSD*(currency==='THB'?s.exchangeRate:1))})`:'ไม่มีข้อมูล'}</p><h4>การจัดสรรตามพอร์ต</h4><ul>${allocations||'<li>ไม่มีข้อมูล</li>'}</ul><button class="btn btn-secondary" data-quarter-md="${s.year}-${s.quarter}">ดาวน์โหลด .md</button><button class="btn btn-secondary" data-quarter-pdf="${s.year}-${s.quarter}">บันทึก PDF</button></details>`;}).join('');
+    container.innerHTML=`<section class="benchmark-card"><h2>การเติบโตของพอร์ต</h2><p>เทียบกับประวัติของคุณเอง • ${currency}</p><p>บันทึกสรุปไตรมาสอัตโนมัติจากวันเปิดเว็บครั้งแรกหลังสิ้นไตรมาส โดยเก็บวันประเมินมูลค่าจริง</p><p>31 มีนาคม · 30 มิถุนายน · 30 กันยายน · 31 ธันวาคม (เวลาไทย)</p><p>${this.escapeHtml(this.marketStatus||'กำลังรอราคา')}</p></section>
+    <section class="benchmark-card"><h3>มูลค่าพอร์ตตามสรุปไตรมาส</h3>${actual.length?'<div style="height:300px"><canvas id="chart-growth-actual"></canvas></div>':'<p>ยังไม่มีสรุปไตรมาส เริ่มเก็บเมื่อเปิดเว็บหลังสิ้นไตรมาส</p>'}</section>
     <section class="benchmark-card"><div class="section-header"><div><h3>เทียบตลาด</h3><p>S&amp;P 500 · Nasdaq-100 · Dow Jones</p></div><button class="btn btn-secondary" id="btn-refresh-benchmark">อัปเดตข้อมูลตลาด</button></div><div class="benchmark-mode"><button data-benchmark-mode="total" class="btn btn-sm ${(this.benchmarkMode||'total')==='total'?'active':''}">รวมปันผล</button><button data-benchmark-mode="price" class="btn btn-sm ${this.benchmarkMode==='price'?'active':''}">ราคาอย่างเดียว</button></div><p>โหมดรวมปันผลใช้ Adjusted Close ของ ETF ตัวแทน SPY, QQQ และ DIA เพื่อรวมผลของเงินปันผลและการปรับราคา</p><div id="benchmark-comparison"></div></section>
     <section class="benchmark-card"><h3>แนวโน้มจากประวัติพอร์ต • 1 ปีข้างหน้า</h3><p>${this.escapeHtml(projection.available?projection.assumption:projection.reason)}</p>${projection.available?'<div style="height:260px"><canvas id="chart-growth-forecast"></canvas></div>':''}</section>
     <section class="benchmark-card"><h3>รายงานรายไตรมาส</h3>${reports||'<p>ยังไม่มีไตรมาสที่บันทึก</p>'}</section>
@@ -577,7 +579,7 @@ Object.assign(PixelStewardApp.prototype, {
     const complete=interval&&!interval.incomplete;
     const ports=Object.entries(snapshot.portValuesUSD||{}).sort((a,b)=>b[1]-a[1]);
     let md=`# สรุป ${snapshot.quarter}/${snapshot.year}\n\n`;
-    md+=`- วันสิ้นไตรมาส: ${snapshot.date}\n- สถานะ: ${late?'บันทึกย้อนหลังจากมูลค่าล่าสุด ไม่ใช่มูลค่าสิ้นไตรมาสจริง':'บันทึกในวันสิ้นไตรมาส'}\n- วันประเมินมูลค่าที่ใช้จริง: ${snapshot.valuationAt||snapshot.recordedAt}\n- วันที่บันทึก: ${snapshot.recordedAt}\n- มูลค่ารวม: ${format(snapshot.totalUSD)} USD / ${format(snapshot.totalUSD*snapshot.exchangeRate)} THB\n- อัตราแลกเปลี่ยนที่ใช้: ${snapshot.exchangeRate} THB/USD\n\n`;
+    md+=`- วันสิ้นไตรมาส: ${snapshot.date}\n- สถานะ: ${late?'รายงานเดิมย้อนหลัง':snapshot.basis==='quarter-visit'?'สรุปไตรมาสจากวันเปิดเว็บใกล้สิ้นไตรมาส':'บันทึกในวันสิ้นไตรมาส'}\n- วันประเมินมูลค่าที่ใช้จริง: ${snapshot.valuationAt||snapshot.recordedAt}\n- วันที่บันทึก: ${snapshot.recordedAt}\n- มูลค่ารวม: ${format(snapshot.totalUSD)} USD / ${format(snapshot.totalUSD*snapshot.exchangeRate)} THB\n- อัตราแลกเปลี่ยนที่ใช้: ${snapshot.exchangeRate} THB/USD\n\n`;
     md+='## ผลการดำเนินงาน\n\n';
     md+=`- กำไรหลังหักเงินเติม/ถอนของไตรมาส: ${complete?format(interval.profit)+' USD':'คำนวณไม่ได้จากข้อมูลที่มี'}\n`;
     md+=`- ผลตอบแทนไตรมาสโดยประมาณ: ${complete&&interval.returnPct!=null?interval.returnPct.toFixed(2)+'%':'คำนวณไม่ได้จากข้อมูลที่มี'}\n`;
@@ -606,7 +608,7 @@ Object.assign(PixelStewardApp.prototype, {
       return `<tr><td>${esc(snapshot.portNames?.[id]||id)}</td><td>${num(value)} USD</td><td>${pct.toFixed(2)}%</td><td>${!late&&oldPct!=null?(pct-oldPct).toFixed(2)+' จุดเปอร์เซ็นต์':'—'}</td></tr>`;}).join('');
     document.getElementById('quarter-print-root')?.remove();
     const root=document.createElement('article');root.id='quarter-print-root';
-    root.innerHTML=`<h1>Portfoli Wolf · ${esc(snapshot.quarter)}/${snapshot.year}</h1><p class="muted">วันสิ้นไตรมาส ${esc(snapshot.date)} · วันประเมินมูลค่า ${esc(snapshot.valuationAt||snapshot.recordedAt)}</p><p class="notice">${late?'บันทึกย้อนหลังจากมูลค่าล่าสุด ไม่ใช่มูลค่าสิ้นไตรมาสจริง':'บันทึกในวันสิ้นไตรมาส'}</p><h2>มูลค่าพอร์ต</h2><p class="value">${num(snapshot.totalUSD)} USD</p><p>ประมาณ ${num(snapshot.totalUSD*snapshot.exchangeRate)} THB · 1 USD = ${num(snapshot.exchangeRate)} THB</p><h2>ผลการลงทุน ณ วันประเมิน</h2><table><tbody><tr><th>กำไรรวมตั้งแต่เริ่มบันทึก</th><td>${snapshot.performance?num(snapshot.performance.totalProfitUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>กำไรที่ขายแล้ว</th><td>${snapshot.performance?num(snapshot.performance.realizedUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>กำไรที่ยังไม่ขาย</th><td>${snapshot.performance?num(snapshot.performance.unrealizedUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>ปันผล</th><td>${snapshot.performance?num(snapshot.performance.dividendsUSD)+' USD':'ไม่มีข้อมูล'}</td></tr></tbody></table><h2>การจัดสรรตามพอร์ต</h2><table><thead><tr><th>พอร์ต</th><th>มูลค่า</th><th>สัดส่วน</th><th>เปลี่ยนจากครั้งก่อน</th></tr></thead><tbody>${rows||'<tr><td colspan="4">ไม่มีข้อมูล</td></tr>'}</tbody></table><h2>สินทรัพย์เด่น</h2><p>${snapshot.bestHolding?`${esc(snapshot.bestHolding.ticker)} · กำไรที่ยังไม่ขาย ${num(snapshot.bestHolding.profitUSD)} USD`:'ไม่มีข้อมูล'}</p><p class="muted">คำแนะนำปรับสมดุลพักไว้ตามเซต 5 ${late?'· ไม่คำนวณผลตอบแทนไตรมาสจากมูลค่าย้อนหลัง':''}</p>`;
+    root.innerHTML=`<h1>Portfoli Wolf · ${esc(snapshot.quarter)}/${snapshot.year}</h1><p class="muted">วันสิ้นไตรมาส ${esc(snapshot.date)} · วันประเมินมูลค่า ${esc(snapshot.valuationAt||snapshot.recordedAt)}</p><p class="notice">${late?'รายงานเดิมย้อนหลัง':snapshot.basis==='quarter-visit'?'สรุปไตรมาสจากวันเปิดเว็บใกล้สิ้นไตรมาส':'บันทึกในวันสิ้นไตรมาส'}</p><h2>มูลค่าพอร์ต</h2><p class="value">${num(snapshot.totalUSD)} USD</p><p>ประมาณ ${num(snapshot.totalUSD*snapshot.exchangeRate)} THB · 1 USD = ${num(snapshot.exchangeRate)} THB</p><h2>ผลการลงทุน ณ วันประเมิน</h2><table><tbody><tr><th>กำไรรวมตั้งแต่เริ่มบันทึก</th><td>${snapshot.performance?num(snapshot.performance.totalProfitUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>กำไรที่ขายแล้ว</th><td>${snapshot.performance?num(snapshot.performance.realizedUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>กำไรที่ยังไม่ขาย</th><td>${snapshot.performance?num(snapshot.performance.unrealizedUSD)+' USD':'ไม่มีข้อมูล'}</td></tr><tr><th>ปันผล</th><td>${snapshot.performance?num(snapshot.performance.dividendsUSD)+' USD':'ไม่มีข้อมูล'}</td></tr></tbody></table><h2>การจัดสรรตามพอร์ต</h2><table><thead><tr><th>พอร์ต</th><th>มูลค่า</th><th>สัดส่วน</th><th>เปลี่ยนจากครั้งก่อน</th></tr></thead><tbody>${rows||'<tr><td colspan="4">ไม่มีข้อมูล</td></tr>'}</tbody></table><h2>สินทรัพย์เด่น</h2><p>${snapshot.bestHolding?`${esc(snapshot.bestHolding.ticker)} · กำไรที่ยังไม่ขาย ${num(snapshot.bestHolding.profitUSD)} USD`:'ไม่มีข้อมูล'}</p><p class="muted">คำแนะนำปรับสมดุลพักไว้ตามเซต 5 ${late?'· ไม่คำนวณผลตอบแทนไตรมาสจากมูลค่าย้อนหลัง':''}</p>`;
     document.body.appendChild(root);
     window.addEventListener('afterprint',()=>root.remove(),{once:true});
     window.print();
@@ -681,7 +683,7 @@ Object.assign(PixelStewardApp.prototype, {
     for(const f of this.cashFlows||[])md+=`| ${cell(f.date)} | ${cell(this.portfolios.find(p=>p.id===f.portfolioId)?.name||f.portfolioId)} | ${cell(f.type)} | ${money(f.amountUSD)} | ${money(f.amountTHB)} | ${cell(f.note)} |\n`;
     md+='\n## ประวัติไตรมาส\n\n';
     for(const s of this.quarterlySnapshots.filter(s=>s.recordedAt).sort((a,b)=>a.recordedAt.localeCompare(b.recordedAt))){
-      md+=`### ${s.quarter}/${s.year}\n\nวันสิ้นไตรมาส: ${s.date}; วันประเมินมูลค่าที่ใช้: ${s.valuationAt||s.recordedAt}; บันทึก: ${s.recordedAt}\n\nสถานะ: ${s.basis==='late-current'?'บันทึกย้อนหลังจากมูลค่าล่าสุด ไม่ใช่มูลค่าสิ้นไตรมาสจริง':'บันทึกในวันสิ้นไตรมาส'}\n\nมูลค่า: ${money(s.totalUSD)} USD / ${money(s.totalUSD*s.exchangeRate)} THB; FX: ${s.exchangeRate}\n\n| พอร์ต | USD |\n|---|---:|\n`;
+      md+=`### ${s.quarter}/${s.year}\n\nวันสิ้นไตรมาส: ${s.date}; วันประเมินมูลค่าที่ใช้: ${s.valuationAt||s.recordedAt}; บันทึก: ${s.recordedAt}\n\nสถานะ: ${s.basis==='late-current'?'รายงานเดิมย้อนหลัง':s.basis==='quarter-visit'?'สรุปไตรมาสจากวันเปิดเว็บใกล้สิ้นไตรมาส':'บันทึกในวันสิ้นไตรมาส'}\n\nมูลค่า: ${money(s.totalUSD)} USD / ${money(s.totalUSD*s.exchangeRate)} THB; FX: ${s.exchangeRate}\n\n| พอร์ต | USD |\n|---|---:|\n`;
       for(const [id,value]of Object.entries(s.portValuesUSD))md+=`| ${cell(s.portNames?.[id]||id)} | ${money(value)} |\n`;
       md+='\n';
     }

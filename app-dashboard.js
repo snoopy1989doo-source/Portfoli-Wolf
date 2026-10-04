@@ -1,7 +1,7 @@
 /* Modern dashboard. All displayed numbers come from the existing portfolio ledger. */
 (function(){
   'use strict';
-  const proto=PixelStewardApp.prototype,setup=proto.setupOnlineUI,render=proto.renderActiveTab,accept=proto.acceptCloud,sync=proto.syncLiveMarketPrices;
+  const proto=PixelStewardApp.prototype,setup=proto.setupOnlineUI,render=proto.renderActiveTab,accept=proto.acceptCloud,sync=proto.syncLiveMarketPrices,tool=proto.renderSimulatorView,growth=proto.renderQuarterlyView;
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const tone=n=>n>0?'gain':n<0?'loss':'neutral';
   const percent=n=>Number.isFinite(n)?`${n>0?'+':''}${n.toFixed(2)}%`:'—';
@@ -50,6 +50,7 @@
       catch(_){this.saving=false;}finally{this.dashboardSaving=false;}
     },
     renderActiveTab(){
+      if(this.currentTab!=='quarterly')document.getElementById('app-view-container')?.classList.remove('modern-growth');
       if(['transactions','alerts'].includes(this.currentTab)){
         Object.values(this.charts||{}).forEach(c=>c?.destroy?.());this.charts={};
         const container=document.getElementById('app-view-container');if(!container)return;
@@ -59,6 +60,23 @@
       return render.call(this);
     },
     dashMoney(value,signed=false){return `${value<0?'-':signed&&value>0?'+':''}${this.formatDual(Math.abs(value)).main}`;},
+    renderSimulatorView(container){
+      tool.call(this,container);
+      const total=PortfolioCore.wealth(this.dataPayload()).otherAssetsUSD;
+      container.insertAdjacentHTML('afterbegin',section('สินทรัพย์อื่น','OTHER ASSETS',`<p>ทองคำ อสังหาริมทรัพย์ เงินฝาก และสินทรัพย์ที่บันทึกเอง</p><strong class="dash-port-value">${this.dashMoney(total)}</strong>`,`<button data-go="wealth">จัดการสินทรัพย์อื่น ↗</button>`,'dash-tool-assets'));
+      this.bindModernDashboard(container);
+    },
+    renderQuarterlyView(container){
+      growth.call(this,container);
+      container.classList.add('modern-growth');
+      const intro=container.querySelector('.benchmark-card');
+      if(intro){intro.classList.add('growth-intro');intro.querySelector('h2').textContent='การเติบโตและสรุปรายไตรมาส';}
+      container.querySelectorAll('.benchmark-card').forEach(panel=>panel.classList.add('dash-panel'));
+      const reports=container.querySelector('.quarter-report')?.closest('section');
+      if(reports)reports.classList.add('growth-reports');
+      container.insertAdjacentHTML('beforeend',section('ประวัติซื้อขายหุ้น','STOCK TRADE JOURNAL',this.renderTradingHistoryHTML(),'<button data-go="transactions">ดูธุรกรรมทั้งหมด ↗</button>','growth-stock-journal'));
+      this.bindModernDashboard(container);
+    },
     renderDashboardView(container){
       const data=this.dataPayload(),s=DashboardCore.summary(data,this.marketQuotes),money=n=>this.dashMoney(n),signed=n=>this.dashMoney(n,true);
       const previousMonth=new Date();previousMonth.setDate(0);const month=PortfolioCore.bangkokDate(previousMonth).slice(0,7);
@@ -67,11 +85,11 @@
       const allocations=[['พอร์ตหุ้น',s.stockValue+s.stockCash,'#22c6ed'],['สินทรัพย์อื่น',s.other,'#f3be55'],['พอร์ตเทรด',s.trading,'#a78bfa']];
       const allocationHTML=allocations.map(([label,value,color])=>`<li><i style="background:${color}"></i><span>${label}<b>${money(value)}</b></span><strong>${s.total>0?(value/s.total*100).toFixed(1):'0.0'}%</strong></li>`).join('');
       const graph=section('Portfolio Value','STOCKS ONLY',`<div class="dash-main-number">${money(s.stockValue)}</div><p class="${tone(s.profit)}">${signed(s.profit)} <small>กำไรรวมจากข้อมูลที่บันทึก · รวมผลขายและปันผลสุทธิ</small></p><div class="dash-segment"><button data-metric="value" class="${this.chartMetric!=='profit'?'selected':''}">มูลค่าหุ้น</button><button data-metric="profit" class="${this.chartMetric==='profit'?'selected':''}">กำไรสะสม</button></div><div class="dash-chart"><canvas id="dash-growth-chart"></canvas><p id="dash-chart-empty" hidden></p></div><div class="dash-ranges">${['1W','1M','3M','1Y','ALL'].map(r=>`<button data-range="${r}" class="${(this.chartRange||'1M')===r?'selected':''}">${r}</button>`).join('')}</div>`,'','dash-value');
-      const assets=section('สินทรัพย์ทั้งหมด','TOTAL ASSETS',`<div class="dash-main-number">${money(s.total)}</div>${monthly}<div class="dash-allocation"><div><canvas id="dash-allocation-chart" aria-label="สัดส่วนสินทรัพย์" role="img"></canvas></div><ul>${allocationHTML}</ul></div>`,`<button class="dash-link" data-go="wealth">จัดการสินทรัพย์ ↗</button>`);
-      const cash=s.stockCash+s.otherCash;
-      const cashCard=section('เงินสดพร้อมใช้','CASH',`<div class="dash-main-number">${money(cash)}</div><div class="dash-cash-breakdown"><span>พอร์ตหุ้น<b>${money(s.stockCash)}</b></span><span>เงินสด / เงินฝากอื่น<b>${money(s.otherCash)}</b></span><span>พอร์ตเทรด<b>ยังไม่แยกเงินสด</b></span></div><small>ยอดทุนเทรดไม่ได้ถือเป็นเงินสดพร้อมถอนโดยอัตโนมัติ</small><div class="dash-cash-ratio"><progress max="100" value="${s.total>0?Math.min(100,cash/s.total*100):0}"></progress><b>${s.total>0?(cash/s.total*100).toFixed(1):'0.0'}%</b></div>`);
+      const assets=section('สินทรัพย์ทั้งหมด','TOTAL ASSETS',`<div class="dash-main-number">${money(s.total)}</div>${monthly}<div class="dash-allocation"><div><canvas id="dash-allocation-chart" aria-label="สัดส่วนสินทรัพย์" role="img"></canvas></div><ul>${allocationHTML}</ul></div>`,`<button class="dash-link" data-go="simulator">สินทรัพย์อื่นใน Tool ↗</button>`);
+      const cash=s.stockCash;
+      const cashCard=section('เงินสดพร้อมใช้','PORTFOLIO CASH',`<div class="dash-main-number">${money(cash)}</div><p class="dash-muted">เงินสดที่บันทึกไว้ในพอร์ตหุ้น สำหรับซื้อสินทรัพย์เพิ่ม</p><div class="dash-cash-ratio"><progress max="100" value="${s.stockValue+cash>0?cash/(s.stockValue+cash)*100:0}"></progress><b>${s.stockValue+cash>0?(cash/(s.stockValue+cash)*100).toFixed(1):'0.0'}%</b></div>`,'','dash-cash-compact');
       const savedScroll=container.querySelector('.dash-carousel')?.scrollLeft||0;
-      container.innerHTML=`<div class="dash-layout"><div class="dash-top">${graph}${assets}</div>${cashCard}${this.modernMoversHTML(s)}${section('พอร์ตของคุณ','YOUR PORTFOLIOS',`<div class="dash-carousel" tabindex="0" aria-label="ปัดเลื่อนพอร์ต">${this.portfolios.map((p,i)=>this.modernPortfolioCard(p,i)).join('')||'<p>เพิ่มพอร์ตเพื่อเริ่มบันทึกการลงทุน</p>'}</div>`,`<div class="dash-actions"><button data-slide="-1" aria-label="พอร์ตก่อนหน้า">←</button><button data-slide="1" aria-label="พอร์ตถัดไป">→</button><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div>`)}<div class="dash-bottom">${this.alertSummaryHTML()}${this.transactionPreviewHTML()}</div><p class="dash-footnote">${esc(this.marketStatus||'รอข้อมูลราคาล่าสุด')} · Alert ทำงานเมื่อเปิดเว็บ</p></div>`;
+      container.innerHTML=`<div class="dash-layout"><div class="dash-top">${graph}${assets}</div><div class="dash-market-row">${this.modernMoversHTML(s)}${cashCard}</div>${section('พอร์ตของคุณ','YOUR PORTFOLIOS',`<div class="dash-carousel" tabindex="0" aria-label="ปัดเลื่อนพอร์ต">${this.portfolios.map((p,i)=>this.modernPortfolioCard(p,i)).join('')||'<p>เพิ่มพอร์ตเพื่อเริ่มบันทึกการลงทุน</p>'}</div>`,`<div class="dash-actions"><button data-slide="-1" aria-label="พอร์ตก่อนหน้า">←</button><button data-slide="1" aria-label="พอร์ตถัดไป">→</button><button id="btn-add-portfolio-modal" class="btn btn-primary">เพิ่มพอร์ต</button></div>`)}<div class="dash-bottom">${this.alertSummaryHTML()}${this.transactionPreviewHTML()}</div><p class="dash-footnote">${esc(this.marketStatus||'รอข้อมูลราคาล่าสุด')} · Alert ทำงานเมื่อเปิดเว็บ</p></div>`;
       this.bindModernDashboard(container);
       const carousel=container.querySelector('.dash-carousel');if(carousel)carousel.scrollLeft=savedScroll;
       this.drawDashboardCharts(s,allocations);

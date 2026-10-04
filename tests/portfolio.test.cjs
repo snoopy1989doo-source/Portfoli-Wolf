@@ -87,19 +87,19 @@ test('completed quarters stop before today and retain exact quarter dates',()=>{
     {year:2026,quarter:'Q3',date:'2026-09-30'}]);
   assert.deepEqual(core.completedQuarters('2026-09-30','2026-09-30'),[]);
 });
-test('missed quarter is saved once with actual valuation date and excluded from period returns',async()=>{
+test('quarter visit is saved once and accepted for interval calculations with its actual date',async()=>{
   const {app}=runtime();app.portfolios=[{...p(125),holdings:[{id:'h',ticker:'MSFT',shares:1,avgCostUSD:100,currentPriceUSD:110,openingBalanceDate:'2026-09-01'}]}];
   let saves=0;app.saveData=async()=>{saves++;return true;};
   assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),true);
   const snap=app.quarterlySnapshots[0];
-  assert.equal(snap.date,'2026-09-30');assert.equal(snap.basis,'late-current');assert.equal(snap.totalUSD,235);
+  assert.equal(snap.date,'2026-09-30');assert.equal(snap.basis,'quarter-visit');assert.equal(snap.totalUSD,235);
   assert.ok(snap.valuationAt.startsWith('2026-'));
   assert.equal(snap.performance.unrealizedUSD,10);
   assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),false);assert.equal(saves,1);
   const prior={year:2026,quarter:'Q2',date:'2026-06-30',recordedAt:'2026-06-30T12:00:00Z',totalUSD:200,exchangeRate:32,portValuesUSD:{p:200}};
-  assert.equal(core.period(prior,snap,[]).incomplete,true);
-  assert.equal(core.period(prior,snap,[]).returnPct,null);
-  const md=app.quarterlyReportMarkdown('2026-Q3');assert.match(md,/ไม่ใช่มูลค่าสิ้นไตรมาสจริง/);assert.match(md,/คำนวณไม่ได้จากข้อมูลที่มี/);
+  assert.equal(core.period(prior,snap,[]).incomplete,false);
+  assert.equal(core.period(prior,snap,[]).returnPct,17.5);
+  const md=app.quarterlyReportMarkdown('2026-Q3');assert.match(md,/สรุปไตรมาสจากวันเปิดเว็บใกล้สิ้นไตรมาส/);assert.match(md,/คำนวณไม่ได้จากข้อมูลที่มี/);
 });
 test('automatic missed-quarter capture commits to the Cloud document without duplicate writes',async()=>{
   const {app}=runtime();app.portfolios=[{...p(40),holdings:[{id:'h',ticker:'ABC',shares:2,avgCostUSD:10,currentPriceUSD:12,openingBalanceDate:'2026-09-01'}]}];
@@ -108,9 +108,17 @@ test('automatic missed-quarter capture commits to the Cloud document without dup
   app.cloudStore={transaction:async fn=>{const next=fn(stored);if(!next)return {committed:false,snapshot:{val:()=>stored}};stored={...stored,...next};writes++;return {committed:true,snapshot:{val:()=>stored}};}};
   app.acceptCloud=value=>{Object.assign(app,core.normalize(value.data));app.revision=value.revision;app.generation=value.generation;app.cloudBaseline=copy(value);app.cloudReady=true;};
   assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),true);
-  assert.equal(stored.data.quarterlySnapshots[0].basis,'late-current');assert.equal(stored.data.quarterlySnapshots[0].totalUSD,64);
+  assert.equal(stored.data.quarterlySnapshots[0].basis,'quarter-visit');assert.equal(stored.data.quarterlySnapshots[0].totalUSD,64);
   assert.equal(stored.data.quarterlySnapshots[0].date,'2026-09-30');assert.equal(writes,1);
   assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-02'),false);assert.equal(writes,1);
+});
+
+test('Q3 migration keeps the original valuation and holdings instead of using todays balance',async()=>{
+  const {app}=runtime();app.portfolios=[p(999)];const original={year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-10-02T16:11:40Z',valuationAt:'2026-10-02T16:11:40Z',basis:'late-current',totalUSD:88.68,exchangeRate:33.67,portValuesUSD:{p:88.68},holdings:[p(88.68)]};app.quarterlySnapshots=[copy(original)];let writes=0;app.saveData=async()=>{writes++;return true;};assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-04'),true);const migrated=app.quarterlySnapshots[0];assert.equal(migrated.basis,'quarter-visit');assert.equal(migrated.totalUSD,88.68);assert.equal(migrated.valuationAt,original.valuationAt);assert.deepEqual(migrated.holdings,original.holdings);assert.equal(await app.checkAndAutoRecordQuarterlySnapshots('2026-10-05'),false);assert.equal(writes,1);
+});
+
+test('a long absence captures only the latest completed quarter without fabricating earlier valuations',async()=>{
+  const {app}=runtime();app.portfolios=[{...p(50),holdings:[{id:'h',ticker:'ABC',shares:1,avgCostUSD:10,currentPriceUSD:12,openingBalanceDate:'2026-01-01'}]}];app.saveData=async()=>true;await app.checkAndAutoRecordQuarterlySnapshots('2026-12-20');assert.equal(app.quarterlySnapshots.length,1);assert.equal(app.quarterlySnapshots[0].quarter,'Q3');assert.equal(app.quarterlySnapshots[0].totalUSD,62);
 });
 test('quarter report print stays in the same tab and escapes portfolio names',()=>{
   const {app,sandbox}=runtime();let printed=0,root;
@@ -121,15 +129,15 @@ test('quarter report print stays in the same tab and escapes portfolio names',()
   app.printQuarterlyReport('2026-Q3');assert.equal(printed,1);assert.equal(root.id,'quarter-print-root');
   assert.ok(root.innerHTML.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));assert.ok(!root.innerHTML.includes('<script>'));
 });
-test('new late snapshot uses refreshed quote from the same opening when available',async()=>{
+test('new quarter visit uses refreshed quote from the same opening when available',async()=>{
   const {app}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'ABC',shares:2,avgCostUSD:10,currentPriceUSD:12}]}];
-  app.quarterlySnapshots=[{year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-10-02T00:00:00Z',valuationAt:'2026-10-02T00:00:00Z',basis:'late-current',totalUSD:24,exchangeRate:33,portValuesUSD:{p:24}}];
+  app.quarterlySnapshots=[{year:2026,quarter:'Q3',date:'2026-09-30',recordedAt:'2026-10-02T00:00:00Z',valuationAt:'2026-10-02T00:00:00Z',basis:'quarter-visit',totalUSD:24,exchangeRate:33,portValuesUSD:{p:24}}];
   app.checkAndAutoRecordQuarterlySnapshots=async()=>{app.lateSnapshotKeysFromOpen=['2026-Q3'];};
   app.syncLiveMarketPrices=async()=>{app.portfolios[0].holdings[0].currentPriceUSD=15;return 1;};
   let saved=0;app.saveData=async()=>{saved++;return true;};
   await app.startQuarterlyOpenCheck();
   assert.equal(saved,1);assert.equal(app.quarterlySnapshots[0].totalUSD,30);
-  assert.equal(app.quarterlySnapshots[0].basis,'late-current');assert.equal(app.quarterlySnapshots[0].date,'2026-09-30');
+  assert.equal(app.quarterlySnapshots[0].basis,'quarter-visit');assert.equal(app.quarterlySnapshots[0].date,'2026-09-30');
 });
 test('quarter report does not call a multi-quarter gap one quarter of profit',()=>{
   const {app}=runtime();
