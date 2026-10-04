@@ -151,7 +151,7 @@ test('price alerts trigger once on entry, rearm on exit and never write Cloud',(
 });
 test('stream trades use fresh previous close and reject older price updates',()=>{
   const {app}=runtime();app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',shares:1,currentPriceUSD:100,change1dPct:0}]}];
-  const now=Date.now();app.applyMarketUpdates({MSFT:{priceUSD:100,change1dPct:0,previousCloseUSD:100,referenceAt:new Date(now).toISOString(),marketAt:new Date(now-5000).toISOString(),source:'Test'}});
+  const now=Date.now();app.applyMarketUpdates({MSFT:{priceUSD:100,change1dPct:0,previousCloseUSD:100,referenceAt:new Date(now).toISOString(),marketAt:new Date(now-5000).toISOString(),regularSession:{start:now-10000,end:now+10000},source:'Test'}});
   app.receiveMarketTrades([{s:'MSFT',p:110,t:now},{s:'MSFT',p:105,t:now-1000}]);
   assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,110);assert.ok(Math.abs(app.portfolios[0].holdings[0].change1dPct-10)<1e-8);
   app.applyMarketUpdates({MSFT:{priceUSD:80,marketAt:new Date(now-2000).toISOString(),source:'Old'}});
@@ -170,7 +170,11 @@ test('stream subscribes only to held US tickers and closes at disconnect',()=>{
   sandbox.WebSocket=class{constructor(url){this.url=url;this.messages=[];socket=this;}send(data){this.messages.push(JSON.parse(data));}close(){this.closed=true;}};
   app.finnhubApiKey='test-key';app.portfolios=[{...p(),holdings:[{id:'h',ticker:'MSFT',shares:1},{id:'b',ticker:'PTT.BK',shares:1},{id:'c',ticker:'BTC',shares:1}]}];
   app.ensureMarketStream();socket.onopen();assert.deepEqual(JSON.parse(JSON.stringify(socket.messages)),[{type:'subscribe',symbol:'MSFT'}]);
+  const now=Date.now();
+  socket.onmessage({data:JSON.stringify({type:'trade',data:[{s:'MSFT',p:999,t:now}]})});assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,undefined);
+  app.marketQuotes={MSFT:{regularSession:{start:now-10000,end:now+10000}}};
   socket.onmessage({data:JSON.stringify({type:'trade',data:[{s:'MSFT',p:123,t:Date.now()}]})});assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,123);
+  socket.onmessage({data:JSON.stringify({type:'trade',data:[{s:'MSFT',p:999,t:now+20000}]})});assert.equal(app.portfolios[0].holdings[0].currentPriceUSD,123);
   app.stopMarketStream();assert.equal(socket.closed,true);assert.equal(app.marketSocket,null);
 });
 test('last successful same-day visit replaces one snapshot, older and next-day do not',()=>{

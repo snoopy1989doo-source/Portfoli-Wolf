@@ -28,7 +28,7 @@ jobs:
       - name: Prepare Web Distribution (www)
         run: |
           mkdir -p www
-          cp index.html style.css mobile.css app.js app-data.js portfolio-core.js cloud-store.js manifest.json sw.js www/
+          cp index.html style.css mobile.css dashboard.css app.js app-data.js app-features.js app-market.js app-assets.js app-ledger.js app-dashboard.js dashboard-core.js portfolio-core.js cloud-store.js manifest.json sw.js www/
           cp -r assets www/
 
       - name: Install Dependencies

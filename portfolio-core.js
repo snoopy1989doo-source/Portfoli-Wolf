@@ -8,7 +8,7 @@
   const clone = value => JSON.parse(JSON.stringify(value));
   const empty = () => ({ portfolios: [], tradingData: {}, quarterlySnapshots: [],
     dividends: [], achievements: [], tradingHistory: [], cashFlows: [], wealthAssets: [],
-    liabilities: [], benchmarkCache: {}, exchangeRate: 32.83 });
+    liabilities: [], dashboardHistory: [], priceAlerts: [], benchmarkCache: {}, exchangeRate: 32.83 });
   function bangkokDate(time = Date.now()) {
     return new Date(new Date(time).getTime() + 7 * 3600000).toISOString().slice(0, 10);
   }
@@ -59,7 +59,7 @@
   }
   function validateImport(value) {
     if(!value || !Array.isArray(value.portfolios))throw Error('ต้องมีรายการ portfolios');
-    for(const key of ['portfolios','dividends','quarterlySnapshots','achievements','tradingHistory','cashFlows','wealthAssets','liabilities'])if(value[key]!==undefined&&!Array.isArray(value[key]))throw Error('รูปแบบ '+key+' ไม่ถูกต้อง');
+    for(const key of ['portfolios','dividends','quarterlySnapshots','achievements','tradingHistory','cashFlows','wealthAssets','liabilities','dashboardHistory','priceAlerts'])if(value[key]!==undefined&&!Array.isArray(value[key]))throw Error('รูปแบบ '+key+' ไม่ถูกต้อง');
     const ids=new Set(),holdingIds=new Set();
     const safeId=id=>typeof id==='string'&&/^[\w:-]+$/.test(id);
     const finite=(n)=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
@@ -67,6 +67,7 @@
       if(!p||!safeId(p.id)||ids.has(p.id)||typeof p.name!=='string'||!Array.isArray(p.holdings))throw Error('พอร์ตไม่มี ID/ชื่อ หรือ ID ซ้ำ');
       ids.add(p.id);const tickers=new Set();
       if(p.cashBufferUSD!==undefined&&!finite(p.cashBufferUSD))throw Error('เงินสดไม่ถูกต้อง');
+      if(p.coverImage!==undefined&&(typeof p.coverImage!=='string'||p.coverImage.length>1000000||!/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(p.coverImage)))throw Error('รูปปกพอร์ตไม่ถูกต้อง');
       for(const h of p.holdings){
         if(!h||!safeId(h.id)||holdingIds.has(h.id)||typeof h.ticker!=='string'||!finite(h.shares)||!finite(h.avgCostUSD)||!finite(h.currentPriceUSD))throw Error('ข้อมูลสินทรัพย์หรือ ID ไม่ถูกต้อง');
         if(!/^[\p{L}\p{N}._^=-]{1,30}$/u.test(h.ticker))throw Error('สัญลักษณ์สินทรัพย์ไม่ถูกต้อง');
@@ -81,6 +82,9 @@
       if(!l||!safeId(l.id)||typeof l.name!=='string'||!['USD','THB'].includes(l.currency)||!finite(l.balance)||!finite(l.monthlyPayment||0)||l.openingBalance!==undefined&&!finite(l.openingBalance)||l.payments!==undefined&&!Array.isArray(l.payments))throw Error('หนี้สินไม่ถูกต้อง');
       for(const p of l.payments||[])if(!p||!safeId(p.id)||!/^\d{4}-\d{2}-\d{2}$/.test(p.date)||!finite(p.principal)||p.principal===0||!finite(p.interest||0)||!finite(p.balanceBefore)||!finite(p.balanceAfter))throw Error('ประวัติชำระหนี้ไม่ถูกต้อง');
     }
+    for(const h of value.dashboardHistory||[])if(!h||!validDate(h.date)||!Number.isFinite(Date.parse(h.at))||!finite(h.stockValue)||!finite(h.total)||!Number.isFinite(h.profit)||!finite(h.exchangeRate)||h.exchangeRate===0)throw Error('ประวัติ Dashboard ไม่ถูกต้อง');
+    const alertIds=new Set();
+    for(const a of value.priceAlerts||[]){if(!a||!safeId(a.id)||alertIds.has(a.id)||typeof a.ticker!=='string'||!['buy','take_profit','stop_loss'].includes(a.type)||!finite(a.targetPrice)||a.targetPrice===0||a.currency!=='USD'||typeof a.isActive!=='boolean')throw Error('ข้อมูล Alert ไม่ถูกต้อง');alertIds.add(a.id);}
     return normalize(value);
   }
   // Reject stale forms atomically: a trade must never save holdings without its cash leg.

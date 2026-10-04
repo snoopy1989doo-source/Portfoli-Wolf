@@ -373,13 +373,17 @@ Object.assign(PixelStewardApp.prototype, {
           if(r.ok){const d=await r.json();if(d.c>0){updates[ticker]={priceUSD:d.c,change1dPct:d.pc>0?(d.c/d.pc-1)*100:Number.isFinite(d.dp)?d.dp:null,source:'Finnhub',marketAt:d.t?new Date(d.t*1000).toISOString():null};}}
         }catch(error){}
       }
-      const data=await this.fetchViaFastProxies(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=true`);
+      const data=await this.fetchViaFastProxies(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&includePrePost=false`);
       const result=data?.chart?.result?.[0];const meta=result?.meta;
       const closes=result?.indicators?.quote?.[0]?.close||[];
       let last=closes.length-1;while(last>=0 && !(closes[last]>0))last--;
       const time=last>=0?result.timestamp?.[last]:meta?.regularMarketTime;
       const price=last>=0?closes[last]:meta?.regularMarketPrice;
-      if(price>0 && (!updates[ticker] || time*1000>Date.parse(updates[ticker].marketAt||0)))updates[ticker]={priceUSD:price,change1dPct:meta?.chartPreviousClose>0?(price/meta.chartPreviousClose-1)*100:null,source:'Yahoo 1m (รวมช่วงนอกเวลาหากมีข้อมูล)',marketAt:time?new Date(time*1000).toISOString():null};
+      const session=meta?.currentTradingPeriod?.regular;
+      const closed=session&&Date.now()>=session.end*1000;
+      const regularPrice=closed&&meta?.regularMarketPrice>0?meta.regularMarketPrice:price;
+      const regularTime=closed&&meta?.regularMarketTime?meta.regularMarketTime:time;
+      if(regularPrice>0)updates[ticker]={priceUSD:regularPrice,change1dPct:meta?.chartPreviousClose>0?(regularPrice/meta.chartPreviousClose-1)*100:null,source:'Yahoo regular session',marketAt:regularTime?new Date(regularTime*1000).toISOString():null,regularSession:session?{start:session.start*1000,end:session.end*1000}:null};
     }
   },
   async startQuarterlyOpenCheck() {

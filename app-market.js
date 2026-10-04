@@ -51,7 +51,8 @@
       for(const trade of trades){const ticker=key(trade.s),price=Number(trade.p),time=Number(trade.t);if(!Number.isFinite(price)||!(price>0)||!Number.isFinite(time)||time<=0||!this.marketStreamSymbols().includes(ticker))continue;
         const prior=updates[ticker];if(prior&&Date.parse(prior.marketAt)>=time)continue;
         const reference=this.marketQuotes?.[ticker];const freshReference=reference?.previousCloseUSD>0&&Date.now()-Date.parse(reference.referenceAt||0)<90000;
-        updates[ticker]={priceUSD:price,change1dPct:freshReference?(price/reference.previousCloseUSD-1)*100:null,previousCloseUSD:reference?.previousCloseUSD,referenceAt:reference?.referenceAt,source:'Finnhub streaming',marketAt:new Date(time).toISOString()};
+        if(!reference?.regularSession||time<reference.regularSession.start||time>=reference.regularSession.end)continue;
+        updates[ticker]={priceUSD:price,change1dPct:freshReference?(price/reference.previousCloseUSD-1)*100:null,previousCloseUSD:reference?.previousCloseUSD,referenceAt:reference?.referenceAt,regularSession:reference?.regularSession||null,source:'Finnhub streaming',marketAt:new Date(time).toISOString()};
       }
       this.applyMarketUpdates(updates);this.refreshMarketView();
     },
